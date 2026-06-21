@@ -1,0 +1,4 @@
+memory = "./memory.local.db"
+
+[nrem]
+amnesia = true

@@ -1,0 +1,18 @@
+[tools]
+go = "1.26.4"
+golangci-lint = "2.12.2"
+
+[tasks.build]
+run = 'go build -o anna .'
+
+[tasks.check]
+run = 'test -z "$(gofmt -l .)" && go vet ./... && golangci-lint run ./...'
+
+[tasks.fmt]
+run = 'gofmt -w .'
+
+[tasks.test]
+run = 'go test ./...'
+
+[tasks.prerelease]
+run = ["go mod tidy", "git add go.mod go.sum"]
