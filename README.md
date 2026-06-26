@@ -16,6 +16,12 @@ Install with `go install`:
 go install github.com/h3y6e/anna@latest
 ```
 
+or [mise](https://mise.en.dev):
+
+```sh
+mise use -g github:h3y6e/anna
+```
+
 `anna` uses [Ollama](https://ollama.com/) for embedding generation.
 
 ```sh
@@ -124,6 +130,19 @@ To rebuild the entire index, use `--amnesia`:
 anna nrem ~/notes --amnesia
 ```
 
+### Periodic runs
+
+On macOS, `nrem` can be scheduled with [mise launchd bootstrap](https://mise.en.dev/bootstrap/launchd.html).
+The following is a minimal example; adjust the paths and interval for your setup:
+
+```toml
+[bootstrap.macos.launchd.agents.anna]
+program = "~/go/bin/anna"
+args = ["nrem", "~/notes"]
+run_at_load = true
+start_interval = 3600
+```
+
 ## Tokenization
 
 Japanese text is tokenized with [Kagome](https://github.com/ikawaha/kagome) and [UniDic](https://github.com/ikawaha/kagome-dict/tree/main/uni).
@@ -132,4 +151,4 @@ No extra runtime is required, and the tokenizer is not configurable.
 
 ## Development
 
-Requires [mise](https://mise.jdx.dev/).
+Requires [mise](https://mise.en.dev/).
