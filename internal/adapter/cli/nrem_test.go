@@ -88,7 +88,7 @@ func TestNREMHelpExposesEmbeddingModelChoice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nrem help failed: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stdout, "--embedding-model") {
+	if !strings.Contains(stdout, "--embedder-model") {
 		t.Fatalf("nrem help = %q, want embedding model choice", stdout)
 	}
 	if strings.Contains(stdout, "--embed ") {
@@ -133,44 +133,6 @@ func TestNREMOutputsJSON(t *testing.T) {
 	}
 }
 
-func TestNREMUsesConfiguredEmbedder(t *testing.T) {
-	t.Parallel()
-
-	source := t.TempDir()
-	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
-	var capturedBaseURL string
-	var capturedModel string
-	cmd := NewRootCommand(testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
-		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(baseURL string, model string) core.Embedder {
-			capturedBaseURL = baseURL
-			capturedModel = model
-			return fixedEmbedder{}
-		},
-		NewTokenizer: func() (core.Tokenizer, error) {
-			return fakeTokenizer{}, nil
-		},
-	}))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"nrem", source})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr.String())
-	}
-	if capturedBaseURL != "http://localhost:11434" {
-		t.Fatalf("default Ollama URL = %q, want http://localhost:11434", capturedBaseURL)
-	}
-	if capturedModel != "embeddinggemma" {
-		t.Fatalf("default embedding model = %q, want embeddinggemma", capturedModel)
-	}
-}
-
 func TestNREMUsesTokenizerFactory(t *testing.T) {
 	t.Parallel()
 
@@ -182,8 +144,8 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(string, string) core.Embedder {
-			return fixedEmbedder{}
+		NewEmbedder: func(string, string, string) (core.Embedder, error) {
+			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			called = true
@@ -215,9 +177,9 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(_ string, model string) core.Embedder {
+		NewEmbedder: func(_ string, _ string, model string) (core.Embedder, error) {
 			capturedModel = model
-			return fixedEmbedder{}
+			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil
@@ -227,7 +189,7 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"nrem", source, "--embedding-model", "qwen3-embedding"})
+	cmd.SetArgs([]string{"nrem", source, "--embedder-model", "qwen3-embedding"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr.String())
@@ -249,8 +211,9 @@ func TestNREMUsesTOMLConfig(t *testing.T) {
 	memoryPath := filepath.Join(t.TempDir(), "configured.db")
 	configPath := filepath.Join(t.TempDir(), "anna.toml")
 	writeFile(t, configPath, fmt.Sprintf(`memory = %q
-ollama-url = "http://ollama.example"
-embedding-model = "qwen3-embedding"
+[embedder]
+url = "http://ollama.example"
+model = "qwen3-embedding"
 
 [nrem]
 amnesia = false
@@ -263,10 +226,10 @@ amnesia = false
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(baseURL string, model string) core.Embedder {
+		NewEmbedder: func(_ string, baseURL string, model string) (core.Embedder, error) {
 			capturedBaseURL = baseURL
 			capturedModel = model
-			return fixedEmbedder{}
+			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil

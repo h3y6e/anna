@@ -22,11 +22,22 @@ or [mise](https://mise.en.dev):
 mise use -g github:h3y6e/anna
 ```
 
-`anna` uses [Ollama](https://ollama.com/) for embedding generation.
+`anna` uses [Ollama](https://ollama.com/) for embedding generation by default:
 
 ```sh
 ollama pull embeddinggemma
 ```
+
+[llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` with its OpenAI-compatible API) is also supported:
+
+```sh
+anna nrem ~/notes --embedder-provider llama.cpp
+```
+
+| Embedder    | Default URL              | Default model                       |
+| ----------- | ------------------------ | ----------------------------------- |
+| `ollama`    | `http://localhost:11434` | `embeddinggemma`                    |
+| `llama.cpp` | `http://localhost:8080` | `ggml-org/embeddinggemma-300M-GGUF:Q8_0` |
 
 ## Quick start
 
@@ -82,8 +93,11 @@ Example `anna.toml`:
 memory = "~/notes/memory.db"
 quiet = false
 json = false
-ollama-url = "http://localhost:11434"
-embedding-model = "embeddinggemma"
+
+[embedder]
+provider = "ollama"
+url = "http://localhost:11434"
+model = "embeddinggemma"
 
 [nrem]
 amnesia = false
@@ -105,7 +119,7 @@ Configuration values are resolved in this order:
 3. Config file
 4. Defaults
 
-For example, `ANNA_OLLAMA_URL` sets the Ollama endpoint unless a CLI flag overrides it.
+For example, `ANNA_EMBEDDER_URL` sets `embedder.url` unless a CLI flag overrides it.
 
 ## Search modes
 
@@ -113,7 +127,7 @@ For example, `ANNA_OLLAMA_URL` sets the Ollama endpoint unless a CLI flag overri
 
 | Mode     | Description                                                                          |
 | -------- | ------------------------------------------------------------------------------------ |
-| `bm25`   | Lexical search using indexed term statistics. Works without Ollama.                  |
+| `bm25`   | Lexical search using indexed term statistics. Works without an embedder.             |
 | `vector` | Cosine similarity between query and document embeddings.                             |
 | `hybrid` | `0.80 * vector + 0.20 * normalized BM25`. This is the default.                       |
 | `rrf`    | Reciprocal rank fusion of BM25 and vector rankings, rescored with cosine similarity. |

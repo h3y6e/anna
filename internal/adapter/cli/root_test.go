@@ -66,8 +66,8 @@ func defaultTestDependencies() Dependencies {
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(string, string) core.Embedder {
-			return fakeEmbedder{}
+		NewEmbedder: func(string, string, string) (core.Embedder, error) {
+			return fakeEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil

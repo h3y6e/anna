@@ -116,9 +116,9 @@ func TestREMReadsOnlyMemory(t *testing.T) {
 			return nil
 		},
 		IndexStore: store,
-		NewEmbedder: func(string, string) core.Embedder {
+		NewEmbedder: func(string, string, string) (core.Embedder, error) {
 			t.Fatal("rem must not create embedder")
-			return nil
+			return nil, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			t.Fatal("rem must not create tokenizer")
