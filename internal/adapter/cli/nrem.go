@@ -37,27 +37,32 @@ and write it to the memory database. Defaults to <notes-dir>/memory.db.`,
 			if err != nil {
 				return err
 			}
-			ollamaURL := cfg.GetString("ollama-url")
-			embeddingModel := cfg.GetString("embedding-model")
 			amnesia := cfg.GetBool("nrem.amnesia")
 			jsonOutput := cfg.GetBool("json")
 
 			if deps.NewEmbedder == nil {
 				return fmt.Errorf("embedder factory is required")
 			}
+			settings, err := resolveEmbedderSettings(cfg)
+			if err != nil {
+				return err
+			}
 			tokenizer, err := tokenizerFor(deps)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "nrem\t%s\t%s\tmodel=%s\n", sourcePath, outputPath, embeddingModel)
+			fmt.Fprintf(cmd.ErrOrStderr(), "nrem\t%s\t%s\tmodel=%s\n", sourcePath, outputPath, settings.Model)
 			w := cmd.ErrOrStderr()
 			var source core.TextSource
 			if deps.NewTextSource != nil {
 				source = deps.NewTextSource()
 			}
-			embedder := deps.NewEmbedder(ollamaURL, embeddingModel)
+			embedder, err := deps.NewEmbedder(settings.Provider, settings.BaseURL, settings.Model)
+			if err != nil {
+				return err
+			}
 			indexer := core.NewIndexer(source, deps.IndexStore, embedder, tokenizer).
-				WithEmbeddingModel(embeddingModel).
+				WithEmbeddingModel(settings.Model).
 				WithProgress(func(p core.IndexProgress) {
 					if p.Cached {
 						fmt.Fprintf(w, "  [%d/%d]\t%s\t(cached)\n", p.Current, p.Total, p.Path)

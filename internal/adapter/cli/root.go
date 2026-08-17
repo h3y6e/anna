@@ -16,12 +16,37 @@ import (
 type Dependencies struct {
 	NewTextSource     func() core.TextSource
 	IndexStore        core.IndexStore
-	NewEmbedder       func(baseURL string, model string) core.Embedder
+	NewEmbedder       func(provider string, baseURL string, model string) (core.Embedder, error)
 	NewTokenizer      func() (core.Tokenizer, error)
 	ConfigSearchPaths []string
 }
 
-const defaultEmbeddingModel = "embeddinggemma"
+type embedderSettings struct {
+	Provider string
+	BaseURL  string
+	Model    string
+}
+
+var embedderDefaults = map[string]embedderSettings{
+	"ollama":    {BaseURL: "http://localhost:11434", Model: "embeddinggemma"},
+	"llama.cpp": {BaseURL: "http://localhost:8080", Model: "ggml-org/embeddinggemma-300M-GGUF:Q8_0"},
+}
+
+func resolveEmbedderSettings(cfg *viper.Viper) (embedderSettings, error) {
+	provider := cfg.GetString("embedder.provider")
+	defaults, ok := embedderDefaults[provider]
+	if !ok {
+		return embedderSettings{}, fmt.Errorf("unsupported embedder %q (supported: ollama, llama.cpp)", provider)
+	}
+	settings := embedderSettings{Provider: provider, BaseURL: defaults.BaseURL, Model: defaults.Model}
+	if url := cfg.GetString("embedder.url"); url != "" {
+		settings.BaseURL = url
+	}
+	if model := cfg.GetString("embedder.model"); model != "" {
+		settings.Model = model
+	}
+	return settings, nil
+}
 
 func NewRootCommand(deps Dependencies) *cobra.Command {
 	cfg := viper.New()
@@ -63,14 +88,17 @@ The commands are named after sleep phases:
 	root.PersistentFlags().StringVar(&configPath, "config", "", "TOML config file path")
 	root.PersistentFlags().StringP("memory", "m", "", "memory database path")
 	root.PersistentFlags().BoolP("quiet", "q", false, "suppress progress output")
-	root.PersistentFlags().String("ollama-url", "http://localhost:11434", "Ollama base URL")
-	root.PersistentFlags().String("embedding-model", defaultEmbeddingModel, "Ollama embedding model")
+	root.PersistentFlags().String("embedder-provider", "ollama", "embedding provider: ollama or llama.cpp")
+	root.PersistentFlags().String("embedder-url", "", "embedding provider base URL (default depends on provider)")
+	root.PersistentFlags().String("embedder-model", "", "embedding model (default depends on provider)")
 	root.PersistentFlags().Bool("json", false, "output results as JSON")
 	_ = cfg.BindPFlag("memory", root.PersistentFlags().Lookup("memory"))
 	_ = cfg.BindPFlag("quiet", root.PersistentFlags().Lookup("quiet"))
-	_ = cfg.BindPFlag("ollama-url", root.PersistentFlags().Lookup("ollama-url"))
-	_ = cfg.BindPFlag("embedding-model", root.PersistentFlags().Lookup("embedding-model"))
+	_ = cfg.BindPFlag("embedder.provider", root.PersistentFlags().Lookup("embedder-provider"))
+	_ = cfg.BindPFlag("embedder.url", root.PersistentFlags().Lookup("embedder-url"))
+	_ = cfg.BindPFlag("embedder.model", root.PersistentFlags().Lookup("embedder-model"))
 	_ = cfg.BindPFlag("json", root.PersistentFlags().Lookup("json"))
+	_ = root.RegisterFlagCompletionFunc("embedder-provider", completeChoices("ollama", "llama.cpp"))
 
 	root.AddCommand(newNREMCommand(cfg, deps))
 	root.AddCommand(newRecallCommand(cfg, deps))

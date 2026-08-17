@@ -28,9 +28,9 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	var capturedModel string
 	cmd := NewRootCommand(testDependencies(Dependencies{
 		IndexStore: store,
-		NewEmbedder: func(_ string, model string) core.Embedder {
+		NewEmbedder: func(_ string, _ string, model string) (core.Embedder, error) {
 			capturedModel = model
-			return fixedEmbedder{}
+			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil
@@ -40,7 +40,7 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"recall", "--memory", memoryPath, "query", "--embedding-model", "qwen3-embedding"})
+	cmd.SetArgs([]string{"recall", "--memory", memoryPath, "query", "--embedder-model", "qwen3-embedding"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr.String())
@@ -125,9 +125,9 @@ mode = "vector"
 
 	cmd := NewRootCommand(testDependencies(Dependencies{
 		IndexStore: store,
-		NewEmbedder: func(string, string) core.Embedder {
+		NewEmbedder: func(string, string, string) (core.Embedder, error) {
 			t.Fatal("flag-selected bm25 mode must not create an embedder")
-			return nil
+			return nil, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil

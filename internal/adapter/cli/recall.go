@@ -25,8 +25,6 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			limit := cfg.GetInt("recall.limit")
 			jsonOutput := cfg.GetBool("json")
 			mode := cfg.GetString("recall.mode")
-			ollamaURL := cfg.GetString("ollama-url")
-			embeddingModel := cfg.GetString("embedding-model")
 
 			memoryPath := cfg.GetString("memory")
 			if memoryPath == "" {
@@ -47,18 +45,26 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 				return err
 			}
 			var embedder core.Embedder
-			if searchMode.RequiresEmbedding() && deps.NewEmbedder == nil {
-				return fmt.Errorf("embedder factory is required")
-			}
+			var settings embedderSettings
 			if searchMode.RequiresEmbedding() {
-				embedder = deps.NewEmbedder(ollamaURL, embeddingModel)
+				if deps.NewEmbedder == nil {
+					return fmt.Errorf("embedder factory is required")
+				}
+				settings, err = resolveEmbedderSettings(cfg)
+				if err != nil {
+					return err
+				}
+				embedder, err = deps.NewEmbedder(settings.Provider, settings.BaseURL, settings.Model)
+				if err != nil {
+					return err
+				}
 			}
 			tokenizer, err := tokenizerFor(deps)
 			if err != nil {
 				return err
 			}
 			searcher := core.NewSearcher(deps.IndexStore, embedder, tokenizer).
-				WithEmbeddingModel(embeddingModel)
+				WithEmbeddingModel(settings.Model)
 			results, err := searcher.SearchFile(cmd.Context(), path, searchQuery, limit, searchMode)
 			if err != nil {
 				if isMemoryNotFound(err) {
