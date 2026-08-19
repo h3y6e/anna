@@ -389,7 +389,7 @@ func validateSearchIndex(ctx context.Context, db *bolt.DB, embeddingModel string
 			indexEmbeddingModel := string(meta.Get(indexEmbeddingModelKey))
 			if indexEmbeddingModel != "" && embeddingModel != "" && indexEmbeddingModel != embeddingModel {
 				return fmt.Errorf(
-					"index was built with embedding model %s; search with --embedding-model %s or rebuild index",
+					"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
 					indexEmbeddingModel,
 					indexEmbeddingModel,
 				)

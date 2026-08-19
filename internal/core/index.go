@@ -407,7 +407,7 @@ func validateSearchEmbeddingModel(index *Index, embeddingModel string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"index was built with embedding model %s; search with --embedding-model %s or rebuild index",
+		"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
 		index.EmbeddingModel,
 		index.EmbeddingModel,
 	)
