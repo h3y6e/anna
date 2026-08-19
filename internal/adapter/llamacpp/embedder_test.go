@@ -2,11 +2,14 @@ package llamacpp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/h3y6e/anna/internal/core"
 )
 
 func TestNewEmbedderUsesQwen3EmbeddingGGUFByDefault(t *testing.T) {
@@ -155,6 +158,44 @@ func TestEmbedBatchSurfacesServerErrorMessage(t *testing.T) {
 	}
 	if want := "model 'missing' not found"; !strings.Contains(err.Error(), want) {
 		t.Fatalf("EmbedBatch error = %v, want message containing %q", err, want)
+	}
+}
+
+func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenServerReportsContextOverflow(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"code":400,"message":"input (2131 tokens) is larger than the max context size (2048 tokens). skipping","type":"exceed_context_size_error","n_prompt_tokens":2131,"n_ctx":2048}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := NewEmbedder(server.URL, "model").EmbedBatch(t.Context(), []string{"long text"})
+	if err == nil {
+		t.Fatal("EmbedBatch error = nil, want context overflow error")
+	}
+	if !errors.Is(err, core.ErrEmbedTextTooLarge) {
+		t.Fatalf("EmbedBatch error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
+	}
+}
+
+func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenBatchExceedsPhysicalBatchSize(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"code":500,"message":"input (11182 tokens) is too large to process. increase the physical batch size (current batch size: 8192)","type":"server_error"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := NewEmbedder(server.URL, "model").EmbedBatch(t.Context(), []string{"a", "b"})
+	if err == nil {
+		t.Fatal("EmbedBatch error = nil, want physical batch size error")
+	}
+	if !errors.Is(err, core.ErrEmbedTextTooLarge) {
+		t.Fatalf("EmbedBatch error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
 	}
 }
 

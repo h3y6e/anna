@@ -2,8 +2,11 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -379,12 +382,75 @@ func TestSearchTokenizedRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
-func TestEmbeddingInputTruncatesLongDocuments(t *testing.T) {
+func TestIndexerSplitsOversizedDocumentAndAveragesEmbeddings(t *testing.T) {
 	t.Parallel()
 
-	input := embeddingInput(Document{Content: strings.Repeat("あ", 8000)})
-	if got := len([]rune(input)); got != 4000 {
-		t.Fatalf("embedding input length = %d, want 4000", got)
+	embedder := &contextLimitedEmbedder{maxRunes: 40}
+	content := strings.Repeat("ab ", 20) // 60 runes, exceeds maxRunes but splits into two halves that fit
+	index, err := NewIndexer(stubTextSource{files: []TextFile{
+		{Path: "long.md", Content: content},
+	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	if err != nil {
+		t.Fatalf("Build error = %v", err)
+	}
+	if len(index.Documents) != 1 {
+		t.Fatalf("document count = %d, want 1", len(index.Documents))
+	}
+	if len(embedder.successfulTexts) != 2 {
+		t.Fatalf("successful embed calls = %d, want 2 from splitting once", len(embedder.successfulTexts))
+	}
+
+	first, second := embedder.successfulTexts[0], embedder.successfulTexts[1]
+	want := (float64(len([]rune(first))) + float64(len([]rune(second)))) / 2
+	got := index.Documents[0].Embedding
+	if len(got) != 2 || got[0] != want || got[1] != 1 {
+		t.Fatalf("embedding = %#v, want average [%v 1]", got, want)
+	}
+}
+
+func TestIndexerSplitsOversizedDocumentWithoutWhitespaceAtMidpoint(t *testing.T) {
+	t.Parallel()
+
+	embedder := &contextLimitedEmbedder{maxRunes: 40}
+	content := strings.Repeat("x", 60) // no whitespace anywhere, forces a hard midpoint split
+
+	index, err := NewIndexer(stubTextSource{files: []TextFile{
+		{Path: "long.md", Content: content},
+	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	if err != nil {
+		t.Fatalf("Build error = %v", err)
+	}
+	if len(embedder.successfulTexts) != 2 {
+		t.Fatalf("successful embed calls = %d, want 2 from splitting once", len(embedder.successfulTexts))
+	}
+	if got := index.Documents[0].Embedding; len(got) != 2 || got[0] != 30 || got[1] != 1 {
+		t.Fatalf("embedding = %#v, want [30 1] from averaging two 30-rune halves", got)
+	}
+}
+
+func TestIndexerSurfacesErrorWhenDocumentTooSmallToSplitFurther(t *testing.T) {
+	t.Parallel()
+
+	embedder := &contextLimitedEmbedder{maxRunes: 5}
+	content := strings.Repeat("x", 30) // exceeds maxRunes but too small to split under the minimum floor
+
+	_, err := NewIndexer(stubTextSource{files: []TextFile{
+		{Path: "tiny.md", Content: content},
+	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	if err == nil || !errors.Is(err, ErrEmbedTextTooLarge) {
+		t.Fatalf("Build error = %v, want error wrapping ErrEmbedTextTooLarge", err)
+	}
+}
+
+func TestIndexerPropagatesNonContextErrorsWithoutSplitting(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("boom")
+	_, err := NewIndexer(stubTextSource{files: []TextFile{
+		{Path: "a.md", Content: "short content"},
+	}}, nil, failingEmbedder{err: wantErr}, fixedTokenizer{}).Build(t.Context(), "notes")
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("Build error = %v, want wrapped %v", err, wantErr)
 	}
 }
 
@@ -595,6 +661,47 @@ func (e *countingEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]fl
 		out[i] = e.embedding
 	}
 	return out, nil
+}
+
+type contextLimitedEmbedder struct {
+	maxRunes int
+
+	mu              sync.Mutex
+	successfulTexts []string
+}
+
+func (e *contextLimitedEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
+	if len([]rune(text)) > e.maxRunes {
+		return nil, fmt.Errorf("input too large: %w", ErrEmbedTextTooLarge)
+	}
+	e.mu.Lock()
+	e.successfulTexts = append(e.successfulTexts, text)
+	e.mu.Unlock()
+	return []float64{float64(len([]rune(text))), 1}, nil
+}
+
+func (e *contextLimitedEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		embedding, err := e.Embed(ctx, text)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = embedding
+	}
+	return out, nil
+}
+
+type failingEmbedder struct {
+	err error
+}
+
+func (e failingEmbedder) Embed(context.Context, string) ([]float64, error) {
+	return nil, e.err
+}
+
+func (e failingEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+	return nil, e.err
 }
 
 type fixedTokenizer struct{}

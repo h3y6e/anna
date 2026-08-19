@@ -4,12 +4,14 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -265,11 +267,11 @@ func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Docum
 		doc.ContentHash = w.hash
 		doc.Terms = terms
 		doc.Length = termCount(terms)
-		texts = append(texts, embeddingInput(*doc))
+		texts = append(texts, doc.Content)
 		pending = append(pending, doc)
 	}
 
-	embeddings, err := i.embedder.EmbedBatch(ctx, texts)
+	embeddings, err := i.embedBatchWithFallback(ctx, texts)
 	if err != nil {
 		return fmt.Errorf("embed batch: %w", err)
 	}
@@ -287,6 +289,87 @@ func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Docum
 		}
 	}
 	return nil
+}
+
+func (i *Indexer) embedBatchWithFallback(ctx context.Context, texts []string) ([][]float64, error) {
+	embeddings, err := i.embedder.EmbedBatch(ctx, texts)
+	if err == nil {
+		return embeddings, nil
+	}
+	if !errors.Is(err, ErrEmbedTextTooLarge) {
+		return nil, err
+	}
+
+	out := make([][]float64, len(texts))
+	for idx, text := range texts {
+		embedding, embedErr := i.embedText(ctx, text)
+		if embedErr != nil {
+			return nil, embedErr
+		}
+		out[idx] = embedding
+	}
+	return out, nil
+}
+
+func (i *Indexer) embedText(ctx context.Context, text string) ([]float64, error) {
+	embedding, err := i.embedder.Embed(ctx, text)
+	if err == nil {
+		return embedding, nil
+	}
+	if !errors.Is(err, ErrEmbedTextTooLarge) {
+		return nil, err
+	}
+
+	first, second, ok := splitTextInHalf(text)
+	if !ok {
+		return nil, err
+	}
+	firstEmbedding, err := i.embedText(ctx, first)
+	if err != nil {
+		return nil, err
+	}
+	secondEmbedding, err := i.embedText(ctx, second)
+	if err != nil {
+		return nil, err
+	}
+	return averageEmbeddings(firstEmbedding, secondEmbedding), nil
+}
+
+const minSplitRunes = 20
+
+func splitTextInHalf(text string) (first string, second string, ok bool) {
+	runes := []rune(text)
+	if len(runes) < minSplitRunes*2 {
+		return "", "", false
+	}
+
+	mid := len(runes) / 2
+	cut := mid
+	for offset := range mid {
+		if unicode.IsSpace(runes[mid+offset]) {
+			cut = mid + offset
+			break
+		}
+		if unicode.IsSpace(runes[mid-offset]) {
+			cut = mid - offset
+			break
+		}
+	}
+
+	first = strings.TrimSpace(string(runes[:cut]))
+	second = strings.TrimSpace(string(runes[cut:]))
+	if first == "" || second == "" {
+		return "", "", false
+	}
+	return first, second, true
+}
+
+func averageEmbeddings(a []float64, b []float64) []float64 {
+	out := make([]float64, len(a))
+	for i, av := range a {
+		out[i] = (av + b[i]) / 2
+	}
+	return out
 }
 
 func (i *Indexer) newIndex(source string, docs []Document) *Index {
@@ -785,16 +868,6 @@ func snippet(content string, query string) string {
 
 func runeIndex(s string, byteIndex int) int {
 	return len([]rune(s[:byteIndex]))
-}
-
-func embeddingInput(doc Document) string {
-	const maxEmbeddingInputRunes = 4000
-
-	runes := []rune(doc.Content)
-	if len(runes) > maxEmbeddingInputRunes {
-		return string(runes[:maxEmbeddingInputRunes])
-	}
-	return doc.Content
 }
 
 const maxIndexedTitleRunes = 200

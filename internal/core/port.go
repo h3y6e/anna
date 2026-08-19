@@ -1,6 +1,11 @@
 package core
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrEmbedTextTooLarge = errors.New("embedding input exceeds the model's context length")
 
 type TextSource interface {
 	ReadTextFiles(ctx context.Context, source string) ([]TextFile, error)

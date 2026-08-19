@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/h3y6e/anna/internal/core"
 )
 
 const (
@@ -109,6 +111,9 @@ func postEmbeddings(ctx context.Context, client *http.Client, url string, payloa
 		if err != nil {
 			return nil, fmt.Errorf("post %s: %s: read error response: %w", url, res.Status, err)
 		}
+		if isContextOverflowError(message) {
+			return nil, fmt.Errorf("post %s: %s: %s: %w", url, res.Status, strings.TrimSpace(string(message)), core.ErrEmbedTextTooLarge)
+		}
 		return nil, fmt.Errorf("post %s: %s: %s", url, res.Status, strings.TrimSpace(string(message)))
 	}
 
@@ -138,4 +143,24 @@ func postEmbeddings(ctx context.Context, client *http.Client, url string, payloa
 		embeddings[i] = item.Embedding
 	}
 	return embeddings, nil
+}
+
+func isContextOverflowError(body []byte) bool {
+	var decoded struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return false
+	}
+	switch decoded.Error.Type {
+	case "exceed_context_size_error":
+		return true
+	case "server_error":
+		return strings.Contains(decoded.Error.Message, "increase the physical batch size")
+	default:
+		return false
+	}
 }
