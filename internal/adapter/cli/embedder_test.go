@@ -27,10 +27,28 @@ func nremWithEmbedderSpy(t *testing.T, extraArgs ...string) (provider, baseURL, 
 	return provider, baseURL, model, err
 }
 
-func TestNREMDefaultsToOllamaEmbedder(t *testing.T) {
+func TestNREMDefaultsToLlamaCppEmbedder(t *testing.T) {
 	t.Parallel()
 
 	provider, baseURL, model, err := nremWithEmbedderSpy(t)
+	if err != nil {
+		t.Fatalf("nrem command failed: %v", err)
+	}
+	if provider != "llama.cpp" {
+		t.Fatalf("provider = %q, want llama.cpp", provider)
+	}
+	if baseURL != "http://localhost:8080" {
+		t.Fatalf("base URL = %q, want http://localhost:8080", baseURL)
+	}
+	if model != "ggml-org/embeddinggemma-300M-GGUF:Q8_0" {
+		t.Fatalf("model = %q, want ggml-org/embeddinggemma-300M-GGUF:Q8_0", model)
+	}
+}
+
+func TestNREMSelectsOllamaEmbedderWithProviderDefaults(t *testing.T) {
+	t.Parallel()
+
+	provider, baseURL, model, err := nremWithEmbedderSpy(t, "--embedder-provider", "ollama")
 	if err != nil {
 		t.Fatalf("nrem command failed: %v", err)
 	}
