@@ -88,7 +88,7 @@ The commands are named after sleep phases:
 	root.PersistentFlags().StringVar(&configPath, "config", "", "TOML config file path")
 	root.PersistentFlags().StringP("memory", "m", "", "memory database path")
 	root.PersistentFlags().BoolP("quiet", "q", false, "suppress progress output")
-	root.PersistentFlags().String("embedder-provider", "ollama", "embedding provider: ollama or llama.cpp")
+	root.PersistentFlags().String("embedder-provider", "llama.cpp", "embedding provider: ollama or llama.cpp")
 	root.PersistentFlags().String("embedder-url", "", "embedding provider base URL (default depends on provider)")
 	root.PersistentFlags().String("embedder-model", "", "embedding model (default depends on provider)")
 	root.PersistentFlags().Bool("json", false, "output results as JSON")

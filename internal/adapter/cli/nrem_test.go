@@ -51,7 +51,7 @@ func TestNREMWritesProgressToStderr(t *testing.T) {
 	if !strings.Contains(stderr, memoryPath) {
 		t.Fatalf("nrem stderr = %q, want memory path %q", stderr, memoryPath)
 	}
-	if !strings.Contains(stderr, "model=embeddinggemma") {
+	if !strings.Contains(stderr, "model=ggml-org/embeddinggemma-300M-GGUF:Q8_0") {
 		t.Fatalf("nrem stderr = %q, want embedding model", stderr)
 	}
 	if !strings.Contains(stderr, "[1/1]") {
@@ -212,7 +212,7 @@ func TestNREMUsesTOMLConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "anna.toml")
 	writeFile(t, configPath, fmt.Sprintf(`memory = %q
 [embedder]
-url = "http://ollama.example"
+url = "http://embedder.example"
 model = "qwen3-embedding"
 
 [nrem]
@@ -250,8 +250,8 @@ amnesia = false
 	if _, err := os.Stat(memoryPath); err != nil {
 		t.Fatalf("configured memory file was not created at %s: %v", memoryPath, err)
 	}
-	if capturedBaseURL != "http://ollama.example" {
-		t.Fatalf("Ollama URL = %q, want config value", capturedBaseURL)
+	if capturedBaseURL != "http://embedder.example" {
+		t.Fatalf("embedder URL = %q, want config value", capturedBaseURL)
 	}
 	if capturedModel != "qwen3-embedding" {
 		t.Fatalf("embedding model = %q, want config value", capturedModel)

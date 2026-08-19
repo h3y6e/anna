@@ -22,22 +22,23 @@ or [mise](https://mise.en.dev):
 mise use -g github:h3y6e/anna
 ```
 
-`anna` uses [Ollama](https://ollama.com/) for embedding generation by default:
+`anna` uses [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` with its OpenAI-compatible API) for embedding generation by default:
+
+```sh
+anna nrem ~/notes
+```
+
+[Ollama](https://ollama.com/) is also supported:
 
 ```sh
 ollama pull embeddinggemma
+anna nrem ~/notes --embedder-provider ollama
 ```
 
-[llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` with its OpenAI-compatible API) is also supported:
-
-```sh
-anna nrem ~/notes --embedder-provider llama.cpp
-```
-
-| Embedder    | Default URL              | Default model                       |
-| ----------- | ------------------------ | ----------------------------------- |
-| `ollama`    | `http://localhost:11434` | `embeddinggemma`                    |
-| `llama.cpp` | `http://localhost:8080` | `ggml-org/embeddinggemma-300M-GGUF:Q8_0` |
+| Embedder    | Default URL               | Default model                            |
+| ----------- | -------------------------- | ----------------------------------------- |
+| `llama.cpp` | `http://localhost:8080`   | `ggml-org/embeddinggemma-300M-GGUF:Q8_0` |
+| `ollama`    | `http://localhost:11434`  | `embeddinggemma`                          |
 
 ## Quick start
 
@@ -95,9 +96,9 @@ quiet = false
 json = false
 
 [embedder]
-provider = "ollama"
-url = "http://localhost:11434"
-model = "embeddinggemma"
+provider = "llama.cpp"
+url = "http://localhost:8080"
+model = "ggml-org/embeddinggemma-300M-GGUF:Q8_0"
 
 [nrem]
 amnesia = false
