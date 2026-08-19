@@ -51,7 +51,7 @@ func TestNREMWritesProgressToStderr(t *testing.T) {
 	if !strings.Contains(stderr, memoryPath) {
 		t.Fatalf("nrem stderr = %q, want memory path %q", stderr, memoryPath)
 	}
-	if !strings.Contains(stderr, "model=ggml-org/embeddinggemma-300M-GGUF:Q8_0") {
+	if !strings.Contains(stderr, "model=Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0") {
 		t.Fatalf("nrem stderr = %q, want embedding model", stderr)
 	}
 	if !strings.Contains(stderr, "[1/1]") {

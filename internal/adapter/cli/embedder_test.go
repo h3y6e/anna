@@ -40,8 +40,8 @@ func TestNREMDefaultsToLlamaCppEmbedder(t *testing.T) {
 	if baseURL != "http://localhost:8080" {
 		t.Fatalf("base URL = %q, want http://localhost:8080", baseURL)
 	}
-	if model != "ggml-org/embeddinggemma-300M-GGUF:Q8_0" {
-		t.Fatalf("model = %q, want ggml-org/embeddinggemma-300M-GGUF:Q8_0", model)
+	if model != "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0" {
+		t.Fatalf("model = %q, want Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", model)
 	}
 }
 
@@ -58,8 +58,8 @@ func TestNREMSelectsOllamaEmbedderWithProviderDefaults(t *testing.T) {
 	if baseURL != "http://localhost:11434" {
 		t.Fatalf("base URL = %q, want http://localhost:11434", baseURL)
 	}
-	if model != "embeddinggemma" {
-		t.Fatalf("model = %q, want embeddinggemma", model)
+	if model != "qwen3-embedding:0.6b" {
+		t.Fatalf("model = %q, want qwen3-embedding:0.6b", model)
 	}
 }
 
@@ -76,8 +76,8 @@ func TestNREMSelectsLlamaCppEmbedderWithProviderDefaults(t *testing.T) {
 	if baseURL != "http://localhost:8080" {
 		t.Fatalf("base URL = %q, want http://localhost:8080", baseURL)
 	}
-	if model != "ggml-org/embeddinggemma-300M-GGUF:Q8_0" {
-		t.Fatalf("model = %q, want ggml-org/embeddinggemma-300M-GGUF:Q8_0", model)
+	if model != "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0" {
+		t.Fatalf("model = %q, want Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", model)
 	}
 }
 

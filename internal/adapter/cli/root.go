@@ -28,8 +28,8 @@ type embedderSettings struct {
 }
 
 var embedderDefaults = map[string]embedderSettings{
-	"ollama":    {BaseURL: "http://localhost:11434", Model: "embeddinggemma"},
-	"llama.cpp": {BaseURL: "http://localhost:8080", Model: "ggml-org/embeddinggemma-300M-GGUF:Q8_0"},
+	"ollama":    {BaseURL: "http://localhost:11434", Model: "qwen3-embedding:0.6b"},
+	"llama.cpp": {BaseURL: "http://localhost:8080", Model: "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"},
 }
 
 func resolveEmbedderSettings(cfg *viper.Viper) (embedderSettings, error) {

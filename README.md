@@ -31,14 +31,14 @@ anna nrem ~/notes
 [Ollama](https://ollama.com/) is also supported:
 
 ```sh
-ollama pull embeddinggemma
+ollama pull qwen3-embedding:0.6b
 anna nrem ~/notes --embedder-provider ollama
 ```
 
 | Embedder    | Default URL               | Default model                            |
 | ----------- | -------------------------- | ----------------------------------------- |
-| `llama.cpp` | `http://localhost:8080`   | `ggml-org/embeddinggemma-300M-GGUF:Q8_0` |
-| `ollama`    | `http://localhost:11434`  | `embeddinggemma`                          |
+| `llama.cpp` | `http://localhost:8080`   | `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0` |
+| `ollama`    | `http://localhost:11434`  | `qwen3-embedding:0.6b`                    |
 
 ## Quick start
 
@@ -98,7 +98,7 @@ json = false
 [embedder]
 provider = "llama.cpp"
 url = "http://localhost:8080"
-model = "ggml-org/embeddinggemma-300M-GGUF:Q8_0"
+model = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"
 
 [nrem]
 amnesia = false

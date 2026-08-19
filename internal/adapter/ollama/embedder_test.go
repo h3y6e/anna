@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-func TestNewEmbedderUsesEmbeddingGemmaByDefault(t *testing.T) {
+func TestNewEmbedderUsesQwen3EmbeddingByDefault(t *testing.T) {
 	t.Parallel()
 
 	embedder := NewEmbedder("http://ollama.example", "")
-	if embedder.Model != "embeddinggemma" {
-		t.Fatalf("embedding model = %q, want embeddinggemma", embedder.Model)
+	if embedder.Model != "qwen3-embedding:0.6b" {
+		t.Fatalf("embedding model = %q, want qwen3-embedding:0.6b", embedder.Model)
 	}
 	if embedder.BaseURL != "http://ollama.example" {
 		t.Fatalf("base URL = %q, want http://ollama.example", embedder.BaseURL)
@@ -50,8 +50,8 @@ func TestEmbedUsesCurrentEmbedEndpoint(t *testing.T) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if payload.Model != "embeddinggemma" {
-			requestErr <- fmt.Errorf("model = %q, want embeddinggemma", payload.Model)
+		if payload.Model != "qwen3-embedding:0.6b" {
+			requestErr <- fmt.Errorf("model = %q, want qwen3-embedding:0.6b", payload.Model)
 			http.Error(w, "unexpected model", http.StatusBadRequest)
 			return
 		}
