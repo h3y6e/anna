@@ -17,7 +17,7 @@ import (
 
 const (
 	DefaultBaseURL        = "http://localhost:8080"
-	DefaultEmbeddingModel = "ggml-org/embeddinggemma-300M-GGUF:Q8_0"
+	DefaultEmbeddingModel = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"
 )
 
 type Embedder struct {

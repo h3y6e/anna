@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-func TestNewEmbedderUsesEmbeddingGemmaGGUFByDefault(t *testing.T) {
+func TestNewEmbedderUsesQwen3EmbeddingGGUFByDefault(t *testing.T) {
 	t.Parallel()
 
 	embedder := NewEmbedder("http://llama.example", "")
-	if embedder.Model != "ggml-org/embeddinggemma-300M-GGUF:Q8_0" {
-		t.Fatalf("embedding model = %q, want ggml-org/embeddinggemma-300M-GGUF:Q8_0", embedder.Model)
+	if embedder.Model != "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0" {
+		t.Fatalf("embedding model = %q, want Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", embedder.Model)
 	}
 	if embedder.BaseURL != "http://llama.example" {
 		t.Fatalf("base URL = %q, want http://llama.example", embedder.BaseURL)
@@ -50,8 +50,8 @@ func TestEmbedBatchUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		if payload.Model != "ggml-org/embeddinggemma-300M-GGUF:Q8_0" {
-			requestErr <- fmt.Errorf("model = %q, want ggml-org/embeddinggemma-300M-GGUF:Q8_0", payload.Model)
+		if payload.Model != "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0" {
+			requestErr <- fmt.Errorf("model = %q, want Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", payload.Model)
 			http.Error(w, "unexpected model", http.StatusBadRequest)
 			return
 		}

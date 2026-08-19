@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const DefaultEmbeddingModel = "embeddinggemma"
+const DefaultEmbeddingModel = "qwen3-embedding:0.6b"
 
 const transientEmbedRetryDelay = 500 * time.Millisecond
 
