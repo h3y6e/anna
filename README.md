@@ -22,16 +22,9 @@ or [mise](https://mise.en.dev):
 mise use -g github:h3y6e/anna
 ```
 
-`anna` generates embeddings through any OpenAI-compatible `/v1/embeddings` endpoint. By default it talks to [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) at `http://localhost:8080` with `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0`:
+`anna` embeds through any OpenAI-compatible `/v1/embeddings` endpoint, by default [llama.cpp](https://github.com/ggml-org/llama.cpp) at `http://localhost:8080` with `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0`. Override with `--embedder-url` and `--embedder-model`, e.g. for [Ollama](https://ollama.com/):
 
 ```sh
-anna nrem ~/notes
-```
-
-Any other OpenAI-compatible server works by overriding the URL and model. For example, [Ollama](https://ollama.com/):
-
-```sh
-ollama pull qwen3-embedding:0.6b
 anna nrem ~/notes --embedder-url http://localhost:11434 --embedder-model qwen3-embedding:0.6b
 ```
 
