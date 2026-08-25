@@ -35,11 +35,6 @@ ollama pull qwen3-embedding:0.6b
 anna nrem ~/notes --embedder-url http://localhost:11434 --embedder-model qwen3-embedding:0.6b
 ```
 
-If the endpoint requires authentication, set the API key via the `ANNA_EMBEDDER_API_KEY` environment variable or `embedder.api-key` in the config file; it is sent as a `Authorization: Bearer` header.
-
-> [!WARNING]
-> When pointed at a remote endpoint, the full text of your notes is sent to that service for embedding.
-
 ## Quick start
 
 Build a memory index from a directory of notes:
