@@ -28,8 +28,8 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	var capturedModel string
 	cmd := NewRootCommand(testDependencies(Dependencies{
 		IndexStore: store,
-		NewEmbedder: func(_ string, _ string, model string) (core.Embedder, error) {
-			capturedModel = model
+		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
+			capturedModel = s.Model
 			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
@@ -125,7 +125,7 @@ mode = "vector"
 
 	cmd := NewRootCommand(testDependencies(Dependencies{
 		IndexStore: store,
-		NewEmbedder: func(string, string, string) (core.Embedder, error) {
+		NewEmbedder: func(EmbedderSettings) (core.Embedder, error) {
 			t.Fatal("flag-selected bm25 mode must not create an embedder")
 			return nil, nil
 		},

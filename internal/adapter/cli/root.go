@@ -16,36 +16,24 @@ import (
 type Dependencies struct {
 	NewTextSource     func() core.TextSource
 	IndexStore        core.IndexStore
-	NewEmbedder       func(provider string, baseURL string, model string) (core.Embedder, error)
+	NewEmbedder       func(settings EmbedderSettings) (core.Embedder, error)
 	NewTokenizer      func() (core.Tokenizer, error)
 	ConfigSearchPaths []string
 }
 
-type embedderSettings struct {
-	Provider string
-	BaseURL  string
-	Model    string
+// EmbedderSettings selects an OpenAI-compatible /v1/embeddings backend.
+type EmbedderSettings struct {
+	BaseURL string
+	Model   string
+	APIKey  string
 }
 
-var embedderDefaults = map[string]embedderSettings{
-	"ollama":    {BaseURL: "http://localhost:11434", Model: "qwen3-embedding:0.6b"},
-	"llama.cpp": {BaseURL: "http://localhost:8080", Model: "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"},
-}
-
-func resolveEmbedderSettings(cfg *viper.Viper) (embedderSettings, error) {
-	provider := cfg.GetString("embedder.provider")
-	defaults, ok := embedderDefaults[provider]
-	if !ok {
-		return embedderSettings{}, fmt.Errorf("unsupported embedder %q (supported: ollama, llama.cpp)", provider)
+func resolveEmbedderSettings(cfg *viper.Viper) EmbedderSettings {
+	return EmbedderSettings{
+		BaseURL: cfg.GetString("embedder.url"),
+		Model:   cfg.GetString("embedder.model"),
+		APIKey:  cfg.GetString("embedder.api-key"),
 	}
-	settings := embedderSettings{Provider: provider, BaseURL: defaults.BaseURL, Model: defaults.Model}
-	if url := cfg.GetString("embedder.url"); url != "" {
-		settings.BaseURL = url
-	}
-	if model := cfg.GetString("embedder.model"); model != "" {
-		settings.Model = model
-	}
-	return settings, nil
 }
 
 func NewRootCommand(deps Dependencies) *cobra.Command {
@@ -88,17 +76,14 @@ The commands are named after sleep phases:
 	root.PersistentFlags().StringVar(&configPath, "config", "", "TOML config file path")
 	root.PersistentFlags().StringP("memory", "m", "", "memory database path")
 	root.PersistentFlags().BoolP("quiet", "q", false, "suppress progress output")
-	root.PersistentFlags().String("embedder-provider", "llama.cpp", "embedding provider: ollama or llama.cpp")
-	root.PersistentFlags().String("embedder-url", "", "embedding provider base URL (default depends on provider)")
-	root.PersistentFlags().String("embedder-model", "", "embedding model (default depends on provider)")
+	root.PersistentFlags().String("embedder-url", "http://localhost:8080", "base URL of an OpenAI-compatible /v1/embeddings endpoint")
+	root.PersistentFlags().String("embedder-model", "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", "embedding model")
 	root.PersistentFlags().Bool("json", false, "output results as JSON")
 	_ = cfg.BindPFlag("memory", root.PersistentFlags().Lookup("memory"))
 	_ = cfg.BindPFlag("quiet", root.PersistentFlags().Lookup("quiet"))
-	_ = cfg.BindPFlag("embedder.provider", root.PersistentFlags().Lookup("embedder-provider"))
 	_ = cfg.BindPFlag("embedder.url", root.PersistentFlags().Lookup("embedder-url"))
 	_ = cfg.BindPFlag("embedder.model", root.PersistentFlags().Lookup("embedder-model"))
 	_ = cfg.BindPFlag("json", root.PersistentFlags().Lookup("json"))
-	_ = root.RegisterFlagCompletionFunc("embedder-provider", completeChoices("ollama", "llama.cpp"))
 
 	root.AddCommand(newNREMCommand(cfg, deps))
 	root.AddCommand(newRecallCommand(cfg, deps))

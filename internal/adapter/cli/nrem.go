@@ -43,10 +43,7 @@ and write it to the memory database. Defaults to <notes-dir>/memory.db.`,
 			if deps.NewEmbedder == nil {
 				return fmt.Errorf("embedder factory is required")
 			}
-			settings, err := resolveEmbedderSettings(cfg)
-			if err != nil {
-				return err
-			}
+			settings := resolveEmbedderSettings(cfg)
 			tokenizer, err := tokenizerFor(deps)
 			if err != nil {
 				return err
@@ -57,7 +54,7 @@ and write it to the memory database. Defaults to <notes-dir>/memory.db.`,
 			if deps.NewTextSource != nil {
 				source = deps.NewTextSource()
 			}
-			embedder, err := deps.NewEmbedder(settings.Provider, settings.BaseURL, settings.Model)
+			embedder, err := deps.NewEmbedder(settings)
 			if err != nil {
 				return err
 			}

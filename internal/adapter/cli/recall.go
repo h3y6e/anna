@@ -45,16 +45,13 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 				return err
 			}
 			var embedder core.Embedder
-			var settings embedderSettings
+			var settings EmbedderSettings
 			if searchMode.RequiresEmbedding() {
 				if deps.NewEmbedder == nil {
 					return fmt.Errorf("embedder factory is required")
 				}
-				settings, err = resolveEmbedderSettings(cfg)
-				if err != nil {
-					return err
-				}
-				embedder, err = deps.NewEmbedder(settings.Provider, settings.BaseURL, settings.Model)
+				settings = resolveEmbedderSettings(cfg)
+				embedder, err = deps.NewEmbedder(settings)
 				if err != nil {
 					return err
 				}

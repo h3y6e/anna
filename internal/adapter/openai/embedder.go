@@ -1,12 +1,13 @@
-// Package llamacpp embeds text via a llama.cpp server (llama-server) using
-// its OpenAI-compatible /v1/embeddings endpoint. In router mode the server
-// loads the model named in each request.
-package llamacpp
+// Package openai embeds text via any OpenAI-compatible /v1/embeddings
+// endpoint: llama.cpp (llama-server), Ollama, vLLM, LM Studio, or the
+// OpenAI API itself.
+package openai
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,24 +18,20 @@ import (
 	"github.com/h3y6e/anna/internal/core"
 )
 
-const (
-	DefaultBaseURL        = "http://localhost:8080"
-	DefaultEmbeddingModel = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"
-)
+const transientEmbedRetryDelay = 500 * time.Millisecond
 
 type Embedder struct {
 	BaseURL string
 	Model   string
+	APIKey  string
 	Client  *http.Client
 }
 
-func NewEmbedder(baseURL string, model string) Embedder {
-	if model == "" {
-		model = DefaultEmbeddingModel
-	}
+func NewEmbedder(baseURL string, model string, apiKey string) Embedder {
 	return Embedder{
 		BaseURL: baseURL,
 		Model:   model,
+		APIKey:  apiKey,
 		Client:  &http.Client{Timeout: 10 * time.Minute},
 	}
 }
@@ -45,7 +42,7 @@ func (e Embedder) Embed(ctx context.Context, text string) ([]float64, error) {
 		return nil, err
 	}
 	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("llama.cpp embed: empty embedding response")
+		return nil, fmt.Errorf("embed: empty embedding response")
 	}
 	return embeddings[0], nil
 }
@@ -53,10 +50,10 @@ func (e Embedder) Embed(ctx context.Context, text string) ([]float64, error) {
 func (e Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
 	baseURL := strings.TrimRight(e.BaseURL, "/")
 	if baseURL == "" {
-		baseURL = DefaultBaseURL
+		return nil, fmt.Errorf("embedding base URL is required")
 	}
 	if e.Model == "" {
-		return nil, fmt.Errorf("llama.cpp embedding model is required")
+		return nil, fmt.Errorf("embedding model is required")
 	}
 	if len(texts) == 0 {
 		return nil, nil
@@ -77,21 +74,50 @@ func (e Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, 
 		defer cancel()
 	}
 
-	embeddings, err := postEmbeddings(ctx, client, baseURL+"/v1/embeddings", map[string]any{
-		"model": e.Model,
-		"input": texts,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("llama.cpp embed batch: %w", err)
+	url := baseURL + "/v1/embeddings"
+	embeddings, err := e.postEmbeddings(ctx, client, url, texts)
+	if err == nil {
+		return checkCount(embeddings, len(texts))
 	}
-	if len(embeddings) != len(texts) {
-		return nil, fmt.Errorf("llama.cpp embed batch: expected %d embeddings, got %d", len(texts), len(embeddings))
+	if !isTransientEOF(err) {
+		return nil, fmt.Errorf("embed batch: %w", err)
+	}
+
+	timer := time.NewTimer(transientEmbedRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+	}
+	embeddings, retryErr := e.postEmbeddings(ctx, client, url, texts)
+	if retryErr != nil {
+		return nil, fmt.Errorf("embed batch: %w; retry: %w", err, retryErr)
+	}
+	return checkCount(embeddings, len(texts))
+}
+
+func checkCount(embeddings [][]float64, want int) ([][]float64, error) {
+	if len(embeddings) != want {
+		return nil, fmt.Errorf("embed batch: expected %d embeddings, got %d", want, len(embeddings))
 	}
 	return embeddings, nil
 }
 
-func postEmbeddings(ctx context.Context, client *http.Client, url string, payload map[string]any) ([][]float64, error) {
-	body, err := json.Marshal(payload)
+// isTransientEOF matches Ollama's occasional 400 response whose JSON body
+// contains "EOF"; one retry is enough in practice.
+func isTransientEOF(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
+}
+
+func (e Embedder) postEmbeddings(ctx context.Context, client *http.Client, url string, texts []string) ([][]float64, error) {
+	body, err := json.Marshal(map[string]any{
+		"model": e.Model,
+		"input": texts,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
@@ -100,6 +126,9 @@ func postEmbeddings(ctx context.Context, client *http.Client, url string, payloa
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if e.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+e.APIKey)
+	}
 
 	res, err := client.Do(req)
 	if err != nil {
@@ -145,6 +174,8 @@ func postEmbeddings(ctx context.Context, client *http.Client, url string, payloa
 	return embeddings, nil
 }
 
+// isContextOverflowError matches llama.cpp error shapes for oversized input;
+// the indexer splits the document and retries on core.ErrEmbedTextTooLarge.
 func isContextOverflowError(body []byte) bool {
 	var decoded struct {
 		Error struct {
