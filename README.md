@@ -22,23 +22,23 @@ or [mise](https://mise.en.dev):
 mise use -g github:h3y6e/anna
 ```
 
-`anna` uses [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server` with its OpenAI-compatible API) for embedding generation by default:
+`anna` generates embeddings through any OpenAI-compatible `/v1/embeddings` endpoint. By default it talks to [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) at `http://localhost:8080` with `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0`:
 
 ```sh
 anna nrem ~/notes
 ```
 
-[Ollama](https://ollama.com/) is also supported:
+Any other OpenAI-compatible server works by overriding the URL and model. For example, [Ollama](https://ollama.com/):
 
 ```sh
 ollama pull qwen3-embedding:0.6b
-anna nrem ~/notes --embedder-provider ollama
+anna nrem ~/notes --embedder-url http://localhost:11434 --embedder-model qwen3-embedding:0.6b
 ```
 
-| Embedder    | Default URL               | Default model                            |
-| ----------- | -------------------------- | ----------------------------------------- |
-| `llama.cpp` | `http://localhost:8080`   | `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0` |
-| `ollama`    | `http://localhost:11434`  | `qwen3-embedding:0.6b`                    |
+If the endpoint requires authentication, set the API key via the `ANNA_EMBEDDER_API_KEY` environment variable or `embedder.api-key` in the config file; it is sent as a `Authorization: Bearer` header.
+
+> [!WARNING]
+> When pointed at a remote endpoint, the full text of your notes is sent to that service for embedding.
 
 ## Quick start
 
@@ -96,7 +96,6 @@ quiet = false
 json = false
 
 [embedder]
-provider = "llama.cpp"
 url = "http://localhost:8080"
 model = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"
 

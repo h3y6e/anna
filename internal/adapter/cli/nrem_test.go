@@ -144,7 +144,7 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(string, string, string) (core.Embedder, error) {
+		NewEmbedder: func(EmbedderSettings) (core.Embedder, error) {
 			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
@@ -177,8 +177,8 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(_ string, _ string, model string) (core.Embedder, error) {
-			capturedModel = model
+		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
+			capturedModel = s.Model
 			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
@@ -226,9 +226,9 @@ amnesia = false
 			return fs.TextSource{}
 		},
 		IndexStore: fs.IndexStore{},
-		NewEmbedder: func(_ string, baseURL string, model string) (core.Embedder, error) {
-			capturedBaseURL = baseURL
-			capturedModel = model
+		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
+			capturedBaseURL = s.BaseURL
+			capturedModel = s.Model
 			return fixedEmbedder{}, nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
