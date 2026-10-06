@@ -10,7 +10,7 @@ import (
 
 func nremWithEmbedderSpy(t *testing.T, extraArgs ...string) (settings EmbedderSettings, err error) {
 	t.Helper()
-	source := t.TempDir()
+	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "note content\n")
 	deps := testDependencies(Dependencies{
 		NewTextSource: func() core.TextSource { return fs.TextSource{} },
@@ -21,7 +21,7 @@ func nremWithEmbedderSpy(t *testing.T, extraArgs ...string) (settings EmbedderSe
 		},
 		NewTokenizer: func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
 	})
-	args := append([]string{"nrem", source, "--memory", filepath.Join(t.TempDir(), "memory.db")}, extraArgs...)
+	args := append([]string{"nrem", source}, extraArgs...)
 	_, _, err = executeCommandWithDependencies(deps, args...)
 	return settings, err
 }
@@ -89,22 +89,19 @@ func TestEmbedderURLEnvVarOverridesDefault(t *testing.T) {
 func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 	t.Parallel()
 
-	memoryPath := filepath.Join(t.TempDir(), "memory.db")
-	store := fs.IndexStore{}
-	if err := store.Save(t.Context(), memoryPath, &core.Index{Version: core.IndexVersion, Documents: []core.Document{{
+	notes := tempDir(t)
+	saveMemory(t, filepath.Join(notes, ".anna.db"), core.Document{
 		Path:      "note.md",
 		Terms:     map[string]int{"query": 1},
 		Length:    1,
 		Embedding: []float64{1, 0},
-	}}}); err != nil {
-		t.Fatalf("save fixture memory: %v", err)
-	}
-	configPath := filepath.Join(t.TempDir(), "anna.toml")
+	})
+	configPath := filepath.Join(tempDir(t), "anna.toml")
 	writeFile(t, configPath, "[embedder]\nurl = \"http://config.example:8080\"\n")
 
 	var settings EmbedderSettings
 	deps := testDependencies(Dependencies{
-		IndexStore: store,
+		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			settings = s
 			return fixedEmbedder{}, nil
@@ -112,7 +109,7 @@ func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 		NewTokenizer: func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
 	})
 	_, stderr, err := executeCommandWithDependencies(deps,
-		"--config", configPath, "recall", "--memory", memoryPath, "query")
+		"--config", configPath, "recall", "--in", notes, "query")
 	if err != nil {
 		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr)
 	}

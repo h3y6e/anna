@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type Indexer struct {
 	tokenizer Tokenizer
 
 	embeddingModel string
+	ignoredPath    string
 	progress       func(IndexProgress)
 }
 
@@ -43,6 +45,12 @@ func NewIndexer(source TextSource, store IndexStore, embedder Embedder, tokenize
 
 func (i *Indexer) WithEmbeddingModel(model string) *Indexer {
 	i.embeddingModel = strings.TrimSpace(model)
+	return i
+}
+
+// WithIgnoredPath skips the file at this path relative to the source, such as the memory stored in the notes directory.
+func (i *Indexer) WithIgnoredPath(relative string) *Indexer {
+	i.ignoredPath = relative
 	return i
 }
 
@@ -65,7 +73,7 @@ func (i *Indexer) Build(ctx context.Context, source string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	return i.newIndex(source, docs), nil
+	return i.newIndex(docs), nil
 }
 
 func (i *Indexer) BuildAndSave(ctx context.Context, source string, indexPath string) (*Index, error) {
@@ -109,18 +117,18 @@ func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath
 	hashes := contentHashes(files)
 	if manifestStore, ok := i.store.(IndexManifestStore); ok {
 		manifest, err := manifestStore.LoadManifest(ctx, indexPath)
-		if err == nil && i.canReuseManifest(manifest, source) && manifestMatchesFiles(manifest, files, hashes) {
-			return i.newIndexSummary(source, manifest.DocumentCount, manifest.GeneratedAt), nil
+		if err == nil && i.canReuseManifest(manifest) && manifestMatchesFiles(manifest, files, hashes) {
+			return i.newIndexSummary(manifest.DocumentCount, manifest.GeneratedAt), nil
 		}
 	}
 
 	existing, err := i.store.Load(ctx, indexPath)
-	if err != nil || !i.canReuseExistingIndex(existing, source) {
+	if err != nil || !i.canReuseExistingIndex(existing) {
 		docs, err := i.buildDocuments(ctx, files, nil, hashes)
 		if err != nil {
 			return nil, err
 		}
-		index := i.newIndex(source, docs)
+		index := i.newIndex(docs)
 		if err := i.store.Save(ctx, indexPath, index); err != nil {
 			return nil, err
 		}
@@ -135,7 +143,7 @@ func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath
 	if err != nil {
 		return nil, err
 	}
-	index := i.newIndex(source, docs)
+	index := i.newIndex(docs)
 	if sameDocuments(existing.Documents, docs) {
 		return existing, nil
 	}
@@ -145,17 +153,15 @@ func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath
 	return index, nil
 }
 
-func (i *Indexer) canReuseExistingIndex(index *Index, source string) bool {
+func (i *Indexer) canReuseExistingIndex(index *Index) bool {
 	return index != nil &&
 		index.Version == IndexVersion &&
-		index.Source == source &&
 		index.EmbeddingModel == i.embeddingModel
 }
 
-func (i *Indexer) canReuseManifest(manifest *IndexManifest, source string) bool {
+func (i *Indexer) canReuseManifest(manifest *IndexManifest) bool {
 	return manifest != nil &&
 		manifest.Version == IndexVersion &&
-		manifest.Source == source &&
 		manifest.EmbeddingModel == i.embeddingModel
 }
 
@@ -176,7 +182,10 @@ func (i *Indexer) readTextFiles(ctx context.Context, source string) ([]TextFile,
 	if err != nil {
 		return nil, err
 	}
-	return files, nil
+	if i.ignoredPath == "" {
+		return files, nil
+	}
+	return slices.DeleteFunc(files, func(file TextFile) bool { return file.Path == i.ignoredPath }), nil
 }
 
 const (
@@ -372,10 +381,9 @@ func averageEmbeddings(a []float64, b []float64) []float64 {
 	return out
 }
 
-func (i *Indexer) newIndex(source string, docs []Document) *Index {
+func (i *Indexer) newIndex(docs []Document) *Index {
 	return &Index{
 		Version:        IndexVersion,
-		Source:         source,
 		EmbeddingModel: i.embeddingModel,
 		DocumentCount:  len(docs),
 		GeneratedAt:    time.Now().UTC(),
@@ -383,10 +391,9 @@ func (i *Indexer) newIndex(source string, docs []Document) *Index {
 	}
 }
 
-func (i *Indexer) newIndexSummary(source string, documentCount int, generatedAt time.Time) *Index {
+func (i *Indexer) newIndexSummary(documentCount int, generatedAt time.Time) *Index {
 	return &Index{
 		Version:        IndexVersion,
-		Source:         source,
 		EmbeddingModel: i.embeddingModel,
 		DocumentCount:  documentCount,
 		GeneratedAt:    generatedAt,
@@ -442,15 +449,20 @@ func (s *Searcher) WithEmbeddingModel(model string) *Searcher {
 	return s
 }
 
-func (s *Searcher) SearchFile(
+// SearchFiles searches several memory files as one corpus. Document paths in the results are joined to the
+// directory that holds each memory file.
+func (s *Searcher) SearchFiles(
 	ctx context.Context,
-	indexPath string,
+	indexPaths []string,
 	query string,
 	limit int,
 	mode SearchMode,
 ) ([]SearchResult, error) {
 	if s.store == nil {
 		return nil, fmt.Errorf("index store is required")
+	}
+	if len(indexPaths) == 0 {
+		return nil, fmt.Errorf("at least one memory file is required")
 	}
 	if err := mode.Validate(); err != nil {
 		return nil, err
@@ -462,27 +474,42 @@ func (s *Searcher) SearchFile(
 		return nil, fmt.Errorf("tokenizer is required")
 	}
 	if store, ok := s.store.(SearchIndexStore); ok {
-		return store.Search(ctx, indexPath, query, limit, s.embedder, s.tokenizer, s.embeddingModel, mode)
+		return store.Search(ctx, indexPaths, query, limit, s.embedder, s.tokenizer, s.embeddingModel, mode)
 	}
 
-	index, err := s.store.Load(ctx, indexPath)
-	if err != nil {
-		return nil, err
+	merged := &Index{Version: IndexVersion}
+	for _, indexPath := range indexPaths {
+		index, err := s.store.Load(ctx, indexPath)
+		if err != nil {
+			return nil, err
+		}
+		if mode.RequiresEmbedding() {
+			if err := validateSearchEmbeddingModel(index, s.embeddingModel); err != nil {
+				return nil, err
+			}
+		}
+		for _, doc := range index.Documents {
+			doc.Path = ResolveDocumentPath(indexPath, doc.Path)
+			merged.Documents = append(merged.Documents, doc)
+		}
 	}
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
-		if err := validateSearchEmbeddingModel(index, s.embeddingModel); err != nil {
-			return nil, err
-		}
+		var err error
 		queryEmbedding, err = s.embedder.Embed(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
-		if err := validateSearchEmbeddings(index, queryEmbedding); err != nil {
+		if err := validateSearchEmbeddings(merged, queryEmbedding); err != nil {
 			return nil, err
 		}
 	}
-	return Search(ctx, index, query, queryEmbedding, limit, s.tokenizer, mode)
+	return Search(ctx, merged, query, queryEmbedding, limit, s.tokenizer, mode)
+}
+
+// ResolveDocumentPath joins a document path stored in a memory file to the directory that holds the memory file.
+func ResolveDocumentPath(indexPath string, documentPath string) string {
+	return filepath.Join(filepath.Dir(indexPath), filepath.FromSlash(documentPath))
 }
 
 func validateSearchEmbeddingModel(index *Index, embeddingModel string) error {

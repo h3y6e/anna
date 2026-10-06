@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +20,6 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 	store := IndexStore{}
 	index := &core.Index{
 		Version:        core.IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model-a",
 		Documents: []core.Document{
 			{
@@ -100,7 +100,6 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 	store := IndexStore{}
 	index := &core.Index{
 		Version:        core.IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model-a",
 		Documents: []core.Document{
 			{
@@ -140,7 +139,6 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	store := IndexStore{}
 	index := &core.Index{
 		Version: core.IndexVersion,
-		Source:  "notes",
 		Documents: []core.Document{
 			{
 				Path: "alpha.md",
@@ -166,7 +164,7 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	}
 	results, err := store.Search(
 		t.Context(),
-		path,
+		[]string{path},
 		"alpha",
 		1,
 		fixedEmbedder{embedding: []float64{1, 0}},
@@ -177,8 +175,8 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
-	if len(results) != 1 || results[0].Path != "alpha.md" {
-		t.Fatalf("Search results = %+v, want alpha.md", results)
+	if want := filepath.Join(filepath.Dir(path), "alpha.md"); len(results) != 1 || results[0].Path != want {
+		t.Fatalf("Search results = %+v, want %s", results, want)
 	}
 }
 
@@ -189,7 +187,6 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	store := IndexStore{}
 	index := &core.Index{
 		Version: core.IndexVersion,
-		Source:  "notes",
 		Documents: []core.Document{
 			{
 				Path: "alpha.md",
@@ -206,7 +203,7 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	}
 	results, err := store.Search(
 		t.Context(),
-		path,
+		[]string{path},
 		"alpha",
 		1,
 		nil,
@@ -217,8 +214,8 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
-	if len(results) != 1 || results[0].Path != "alpha.md" {
-		t.Fatalf("Search results = %+v, want alpha.md", results)
+	if want := filepath.Join(filepath.Dir(path), "alpha.md"); len(results) != 1 || results[0].Path != want {
+		t.Fatalf("Search results = %+v, want %s", results, want)
 	}
 }
 
@@ -229,7 +226,6 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	store := IndexStore{}
 	index := &core.Index{
 		Version:        core.IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model-a",
 		Documents: []core.Document{
 			{
@@ -247,7 +243,7 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	}
 	_, err := store.Search(
 		t.Context(),
-		path,
+		[]string{path},
 		"content",
 		1,
 		errorEmbedder{},
@@ -257,6 +253,112 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	)
 	if err == nil || !strings.Contains(err.Error(), "index was built with embedding model model-a") {
 		t.Fatalf("Search error = %v, want embedding model mismatch", err)
+	}
+}
+
+func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.T) {
+	t.Parallel()
+
+	store := IndexStore{}
+	work := filepath.Join(t.TempDir(), "work")
+	home := filepath.Join(t.TempDir(), "home")
+	for _, dir := range []string{work, home} {
+		saveMemory(t, store, filepath.Join(dir, ".anna.db"), "", core.Document{
+			Path:      "todo.md",
+			Content:   "todo list",
+			Terms:     map[string]int{"todo": 1},
+			Length:    1,
+			Embedding: []float64{1, 0},
+		})
+	}
+
+	results, err := store.Search(
+		t.Context(),
+		[]string{filepath.Join(work, ".anna.db"), filepath.Join(home, ".anna.db")},
+		"todo",
+		10,
+		fixedEmbedder{embedding: []float64{1, 0}},
+		fixedTokenizer{tokens: []string{"todo"}},
+		"",
+		core.SearchModeRRF,
+	)
+	if err != nil {
+		t.Fatalf("Search error = %v", err)
+	}
+	got := []string{}
+	for _, result := range results {
+		got = append(got, result.Path)
+	}
+	slices.Sort(got)
+	want := []string{filepath.Join(home, "todo.md"), filepath.Join(work, "todo.md")}
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("Search paths = %v, want %v", got, want)
+	}
+}
+
+func TestIndexStoreSearchOverSeveralMemoriesScoresTermsAgainstTheCombinedCorpus(t *testing.T) {
+	t.Parallel()
+
+	store := IndexStore{}
+	common := filepath.Join(t.TempDir(), "common")
+	rare := filepath.Join(t.TempDir(), "rare")
+	saveMemory(t, store, filepath.Join(common, ".anna.db"), "",
+		core.Document{Path: "a.md", Content: "go", Terms: map[string]int{"go": 1}, Length: 1},
+		core.Document{Path: "b.md", Content: "go", Terms: map[string]int{"go": 1}, Length: 1},
+		core.Document{Path: "c.md", Content: "go", Terms: map[string]int{"go": 1}, Length: 1},
+	)
+	saveMemory(t, store, filepath.Join(rare, ".anna.db"), "",
+		core.Document{Path: "d.md", Content: "go", Terms: map[string]int{"go": 1}, Length: 1},
+		core.Document{Path: "e.md", Content: "other", Terms: map[string]int{"other": 1}, Length: 1},
+		core.Document{Path: "f.md", Content: "other", Terms: map[string]int{"other": 1}, Length: 1},
+	)
+	search := func(paths ...string) float64 {
+		results, err := store.Search(t.Context(), paths, "go", 10, nil, fixedTokenizer{tokens: []string{"go"}}, "", core.SearchModeBM25)
+		if err != nil {
+			t.Fatalf("Search error = %v", err)
+		}
+		for _, result := range results {
+			if filepath.Base(result.Path) == "d.md" {
+				return result.Score
+			}
+		}
+		t.Fatalf("Search results = %+v, want d.md", results)
+		return 0
+	}
+
+	alone := search(filepath.Join(rare, ".anna.db"))
+	combined := search(filepath.Join(rare, ".anna.db"), filepath.Join(common, ".anna.db"))
+
+	if combined >= alone {
+		t.Fatalf("d.md score with a corpus where the term is common = %v, want below %v", combined, alone)
+	}
+}
+
+func TestIndexStoreSearchRejectsMemoriesBuiltWithDifferentEmbeddingModels(t *testing.T) {
+	t.Parallel()
+
+	store := IndexStore{}
+	a := filepath.Join(t.TempDir(), "a", ".anna.db")
+	b := filepath.Join(t.TempDir(), "b", ".anna.db")
+	doc := core.Document{Path: "note.md", Content: "note", Terms: map[string]int{"note": 1}, Length: 1, Embedding: []float64{1, 0}}
+	saveMemory(t, store, a, "model-a", doc)
+	saveMemory(t, store, b, "model-b", doc)
+
+	_, err := store.Search(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, "model-a", core.SearchModeHybrid)
+
+	if err == nil || !strings.Contains(err.Error(), "index was built with embedding model model-b") {
+		t.Fatalf("Search error = %v, want embedding model mismatch", err)
+	}
+}
+
+func saveMemory(t *testing.T, store IndexStore, path string, embeddingModel string, docs ...core.Document) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	if err := store.Save(t.Context(), path, &core.Index{Version: core.IndexVersion, EmbeddingModel: embeddingModel, Documents: docs}); err != nil {
+		t.Fatalf("save memory %s: %v", path, err)
 	}
 }
 

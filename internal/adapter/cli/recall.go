@@ -17,20 +17,19 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 		Long:  "Search the memory database for the given query and return the most relevant notes.",
 		Args:  cobra.ArbitraryArgs,
 		Example: `  # Search with the default hybrid mode
-  anna recall --memory ~/notes/memory.db "search query"
+  anna recall --in ~/notes "search query"
+
+  # Search several notes directories as one memory
+  anna recall --in ~/notes --in ~/work/notes "search query"
 
   # Fast lexical search with JSON output
-  anna recall --memory ~/notes/memory.db --mode bm25 --json "search query"`,
+  anna recall --in ~/notes --mode bm25 --json "search query"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			limit := cfg.GetInt("recall.limit")
 			jsonOutput := cfg.GetBool("json")
 			mode := cfg.GetString("recall.mode")
 
-			memoryPath := cfg.GetString("memory")
-			if memoryPath == "" {
-				return fmt.Errorf("memory path is required")
-			}
-			path, err := defaultMemoryPath(memoryPath)
+			scopes, err := searchScopes(cmd, cfg)
 			if err != nil {
 				return err
 			}
@@ -42,6 +41,9 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 
 			searchMode, err := core.ParseSearchMode(mode)
 			if err != nil {
+				return err
+			}
+			if err := requireMemories(scopes); err != nil {
 				return err
 			}
 			var embedder core.Embedder
@@ -62,11 +64,12 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			}
 			searcher := core.NewSearcher(deps.IndexStore, embedder, tokenizer).
 				WithEmbeddingModel(settings.Model)
-			results, err := searcher.SearchFile(cmd.Context(), path, searchQuery, limit, searchMode)
+			memories := make([]string, len(scopes))
+			for i, scope := range scopes {
+				memories[i] = scope.Memory
+			}
+			results, err := searcher.SearchFiles(cmd.Context(), memories, searchQuery, limit, searchMode)
 			if err != nil {
-				if isMemoryNotFound(err) {
-					return fmt.Errorf("memory file %q not found; run 'anna nrem <notes-dir>' to create it", path)
-				}
 				return fmt.Errorf("search memory: %w", err)
 			}
 			if jsonOutput {
@@ -85,6 +88,7 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			return nil
 		},
 	}
+	addInFlag(cmd)
 	cmd.Flags().Int("limit", 10, "maximum results")
 	cmd.Flags().String("mode", string(core.SearchModeHybrid), "recall mode: bm25, vector, hybrid, or rrf")
 	_ = cfg.BindPFlag("recall.limit", cmd.Flags().Lookup("limit"))

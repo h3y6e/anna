@@ -5,7 +5,7 @@ A lightweight CLI that indexes local text notes and searches.
 The commands are named after sleep phases:
 
 - `nrem` builds the search index from notes
-- `recall` searches the index
+- `recall` searches the memory
 - `rem` surfaces related note pairs
 
 ## Install
@@ -30,34 +30,43 @@ anna nrem ~/notes --embedder-url http://localhost:11434 --embedder-model qwen3-e
 
 ## Quick start
 
-Build a memory index from a directory of notes:
+Build a memory from a directory of notes:
 
 ```sh
 anna nrem ~/notes
 ```
 
-This writes the index to:
+Each notes directory keeps its own memory inside it. This writes the memory to:
 
 ```text
-~/notes/memory.db
+~/notes/.anna.db
 ```
 
-Recall notes from the index:
+Recall notes from the memory:
 
 ```sh
-anna recall --memory ~/notes/memory.db 'search query'
+anna recall --in ~/notes 'search query'
 ```
+
+Search several notes directories as one memory:
+
+```sh
+anna nrem ~/notes ~/work/notes
+anna recall --in ~/notes --in ~/work/notes 'search query'
+```
+
+Results are absolute paths. Directories that are the same or contain one another, including through symlinks, cannot be indexed or searched together.
 
 Run lexical search only:
 
 ```sh
-anna recall --memory ~/notes/memory.db --mode bm25 'search query'
+anna recall --in ~/notes --mode bm25 'search query'
 ```
 
-Surface read-only recombination candidates:
+Surface read-only recombination candidates in one notes directory:
 
 ```sh
-anna rem --memory ~/notes/memory.db
+anna rem --in ~/notes
 ```
 
 ## Configuration
@@ -76,10 +85,13 @@ Without `--config`, `anna` searches for config files in this order:
 
 Local configuration values override global configuration values.
 
+`notes` lists the directories that `nrem` builds when no directory is given and that `recall` and `rem` read when `--in` is not given; `rem` needs `--in` when `notes` lists several. Relative entries resolve against the directory of the config file that sets them. `memory` is the file name of the memory inside each notes directory; it cannot point to another directory.
+
 Example `anna.toml`:
 
 ```toml
-memory = "~/notes/memory.db"
+notes = ["~/notes"]
+memory = ".anna.db"
 quiet = false
 json = false
 
@@ -107,7 +119,7 @@ Configuration values are resolved in this order:
 3. Config file
 4. Defaults
 
-For example, `ANNA_EMBEDDER_URL` sets `embedder.url` unless a CLI flag overrides it.
+For example, `ANNA_EMBEDDER_URL` sets `embedder.url` unless a CLI flag overrides it. `ANNA_NOTES` separates directories with the OS path list separator (`:` on macOS and Linux).
 
 ## Search modes
 
@@ -120,7 +132,8 @@ For example, `ANNA_EMBEDDER_URL` sets `embedder.url` unless a CLI flag overrides
 | `hybrid` | `0.80 * vector + 0.20 * normalized BM25`. This is the default.                       |
 | `rrf`    | Reciprocal rank fusion of BM25 and vector rankings, rescored with cosine similarity. |
 
-The embedding model used to build the index must match the embedding model used for recall.
+The embedding model used to build the memory must match the embedding model used for recall.
+When `recall` reads several directories, term statistics are computed over all of them, and every memory must use the same embedding model.
 
 ## Incremental indexing
 

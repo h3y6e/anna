@@ -1,4 +1,5 @@
-memory = "./memory.local.db"
+memory = "memory.local.db"
+notes = ["."]
 
 [nrem]
 amnesia = true

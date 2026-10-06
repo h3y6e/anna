@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -52,7 +54,6 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		Documents: []Document{
 			{
@@ -68,7 +69,6 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 	}}
 	store.manifest = &IndexManifest{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		DocumentCount:  1,
 		Documents: map[string]DocumentManifest{
@@ -107,7 +107,6 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		Documents: []Document{
 			{
@@ -123,7 +122,6 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 	}}
 	store.manifest = &IndexManifest{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		DocumentCount:  1,
 		Documents: map[string]DocumentManifest{
@@ -182,7 +180,6 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		Documents: []Document{
 			{
@@ -212,27 +209,27 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 func TestSearcherRequiresIndexStore(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSearcher(nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).SearchFile(t.Context(), "memory.db", "query", 10, SearchModeHybrid)
+	_, err := NewSearcher(nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
 	if err == nil || !strings.Contains(err.Error(), "index store is required") {
-		t.Fatalf("SearchFile error = %v, want index store is required", err)
+		t.Fatalf("SearchFiles error = %v, want index store is required", err)
 	}
 }
 
 func TestSearcherRequiresEmbedder(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSearcher(stubIndexStore{}, nil, fixedTokenizer{}).SearchFile(t.Context(), "memory.db", "query", 10, SearchModeHybrid)
+	_, err := NewSearcher(stubIndexStore{}, nil, fixedTokenizer{}).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
 	if err == nil || !strings.Contains(err.Error(), "embedder is required") {
-		t.Fatalf("SearchFile error = %v, want embedder is required", err)
+		t.Fatalf("SearchFiles error = %v, want embedder is required", err)
 	}
 }
 
 func TestSearcherRequiresTokenizer(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSearcher(stubIndexStore{}, fixedEmbedder{embedding: []float64{1, 0}}, nil).SearchFile(t.Context(), "memory.db", "query", 10, SearchModeHybrid)
+	_, err := NewSearcher(stubIndexStore{}, fixedEmbedder{embedding: []float64{1, 0}}, nil).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
 	if err == nil || !strings.Contains(err.Error(), "tokenizer is required") {
-		t.Fatalf("SearchFile error = %v, want tokenizer is required", err)
+		t.Fatalf("SearchFiles error = %v, want tokenizer is required", err)
 	}
 }
 
@@ -240,9 +237,50 @@ func TestSearcherRejectsIndexWithoutEmbeddings(t *testing.T) {
 	t.Parallel()
 
 	_, err := NewSearcher(stubIndexStore{index: &Index{Documents: []Document{{Path: "note.md"}}}}, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
-		SearchFile(t.Context(), "memory.db", "query", 10, SearchModeHybrid)
+		SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
 	if err == nil || !strings.Contains(err.Error(), "has no embedding") {
-		t.Fatalf("SearchFile error = %v, want missing embedding error", err)
+		t.Fatalf("SearchFiles error = %v, want missing embedding error", err)
+	}
+}
+
+func TestSearcherSearchFilesJoinsEachMemoryDirectoryToItsDocumentPaths(t *testing.T) {
+	t.Parallel()
+
+	store := stubIndexStore{index: &Index{Documents: []Document{{Path: "todo.md", Content: "todo", Terms: map[string]int{"todo": 1}, Length: 1}}}}
+	results, err := NewSearcher(store, nil, fixedTokenizer{}).
+		SearchFiles(t.Context(), []string{filepath.Join("work", ".anna.db"), filepath.Join("home", ".anna.db")}, "todo", 10, SearchModeBM25)
+	if err != nil {
+		t.Fatalf("SearchFiles error = %v", err)
+	}
+	got := []string{}
+	for _, result := range results {
+		got = append(got, result.Path)
+	}
+	slices.Sort(got)
+	if want := []string{filepath.Join("home", "todo.md"), filepath.Join("work", "todo.md")}; !slices.Equal(got, want) {
+		t.Fatalf("SearchFiles paths = %v, want %v", got, want)
+	}
+}
+
+func TestIndexerSkipsOnlyTheMemoryFileAtTheSourceRoot(t *testing.T) {
+	t.Parallel()
+
+	index, err := NewIndexer(stubTextSource{files: []TextFile{
+		{Path: "note.md", Content: "# Note\n"},
+		{Path: "memory.md", Content: "binary"},
+		{Path: "sub/memory.md", Content: "binary"},
+	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).WithIgnoredPath("memory.md").
+		Build(t.Context(), "notes")
+	if err != nil {
+		t.Fatalf("Build error = %v", err)
+	}
+	got := []string{}
+	for _, doc := range index.Documents {
+		got = append(got, doc.Path)
+	}
+	slices.Sort(got)
+	if want := []string{"note.md", "sub/memory.md"}; !slices.Equal(got, want) {
+		t.Fatalf("documents = %v, want %v", got, want)
 	}
 }
 
@@ -529,7 +567,6 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		Documents: []Document{
 			{
@@ -545,7 +582,6 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 	}}
 	store.manifest = &IndexManifest{
 		Version:        IndexVersion,
-		Source:         "notes",
 		EmbeddingModel: "model",
 		DocumentCount:  1,
 		Documents: map[string]DocumentManifest{

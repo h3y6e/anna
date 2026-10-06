@@ -29,7 +29,6 @@ var (
 
 var (
 	indexVersionKey        = []byte("version")
-	indexSourceKey         = []byte("source")
 	indexEmbeddingModelKey = []byte("embedding_model")
 	indexGeneratedAtKey    = []byte("generated_at")
 	indexDocumentCountKey  = []byte("document_count")
@@ -127,9 +126,6 @@ func saveIndexToDB(ctx context.Context, db *bolt.DB, index *core.Index) error {
 		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(index.Version))); err != nil {
 			return fmt.Errorf("write index version: %w", err)
 		}
-		if err := meta.Put(indexSourceKey, []byte(index.Source)); err != nil {
-			return fmt.Errorf("write index source: %w", err)
-		}
 		if err := meta.Put(indexEmbeddingModelKey, []byte(index.EmbeddingModel)); err != nil {
 			return fmt.Errorf("write index embedding model: %w", err)
 		}
@@ -219,7 +215,6 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 			return fmt.Errorf("decode index version: %w", err)
 		}
 		manifest.Version = version
-		manifest.Source = string(meta.Get(indexSourceKey))
 		manifest.EmbeddingModel = string(meta.Get(indexEmbeddingModelKey))
 		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
 			parsed, err := strconv.Atoi(string(count))
@@ -258,7 +253,7 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 
 func (IndexStore) Search(
 	ctx context.Context,
-	path string,
+	paths []string,
 	query string,
 	limit int,
 	embedder core.Embedder,
@@ -268,6 +263,9 @@ func (IndexStore) Search(
 ) ([]core.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("at least one memory file is required")
 	}
 	if err := mode.Validate(); err != nil {
 		return nil, err
@@ -279,15 +277,27 @@ func (IndexStore) Search(
 		return nil, fmt.Errorf("tokenizer is required")
 	}
 
-	db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
-	if err != nil {
-		return nil, fmt.Errorf("open index: %w", err)
+	type memory struct {
+		path string
+		db   *bolt.DB
 	}
-	defer db.Close()
+	memories := make([]memory, 0, len(paths))
+	defer func() {
+		for _, m := range memories {
+			m.db.Close()
+		}
+	}()
+	for _, path := range paths {
+		db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+		if err != nil {
+			return nil, fmt.Errorf("open index %s: %w", path, err)
+		}
+		memories = append(memories, memory{path: path, db: db})
+		if err := validateSearchIndex(ctx, db, embeddingModel, mode); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
 
-	if err := validateSearchIndex(ctx, db, embeddingModel, mode); err != nil {
-		return nil, err
-	}
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
 		var err error
@@ -306,7 +316,29 @@ func (IndexStore) Search(
 	queryTerms = uniqueTokens(queryTerms)
 
 	index := &core.Index{Version: core.IndexVersion}
-	if err := db.View(func(tx *bolt.Tx) error {
+	for _, m := range memories {
+		docs, err := readSearchDocuments(ctx, m.db, queryTerms, queryEmbedding, mode)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", m.path, err)
+		}
+		for _, doc := range docs {
+			doc.Path = core.ResolveDocumentPath(m.path, doc.Path)
+			index.Documents = append(index.Documents, doc)
+		}
+	}
+	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
+	return core.SearchTokenized(index, query, queryTerms, queryEmbedding, limit, mode)
+}
+
+func readSearchDocuments(
+	ctx context.Context,
+	db *bolt.DB,
+	queryTerms []string,
+	queryEmbedding []float64,
+	mode core.SearchMode,
+) ([]core.Document, error) {
+	var docs []core.Document
+	err := db.View(func(tx *bolt.Tx) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -324,7 +356,7 @@ func (IndexStore) Search(
 		if err != nil {
 			return err
 		}
-		index.Documents = make([]core.Document, 0, documentInfo.Stats().KeyN)
+		docs = make([]core.Document, 0, documentInfo.Stats().KeyN)
 		if err := documentInfo.ForEach(func(key []byte, value []byte) error {
 			info, err := decodeIndexDocumentInfo(value)
 			if err != nil {
@@ -349,7 +381,7 @@ func (IndexStore) Search(
 					)
 				}
 			}
-			index.Documents = append(index.Documents, core.Document{
+			docs = append(docs, core.Document{
 				Path:        info.Path,
 				Content:     info.Content,
 				ContentHash: info.ContentHash,
@@ -362,11 +394,8 @@ func (IndexStore) Search(
 			return fmt.Errorf("read index documents: %w", err)
 		}
 		return nil
-	}); err != nil {
-		return nil, err
-	}
-	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
-	return core.SearchTokenized(index, query, queryTerms, queryEmbedding, limit, mode)
+	})
+	return docs, err
 }
 
 func validateSearchIndex(ctx context.Context, db *bolt.DB, embeddingModel string, mode core.SearchMode) error {
@@ -464,7 +493,6 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 			return fmt.Errorf("decode index version: %w", err)
 		}
 		index.Version = version
-		index.Source = string(meta.Get(indexSourceKey))
 		index.EmbeddingModel = string(meta.Get(indexEmbeddingModelKey))
 		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
 			parsed, err := strconv.Atoi(string(count))
