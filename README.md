@@ -98,6 +98,8 @@ json = false
 [embedder]
 url = "http://localhost:8080"
 model = "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0"
+query-prefix = ""
+document-prefix = ""
 
 [nrem]
 amnesia = false
@@ -111,6 +113,8 @@ focus = "all"
 limit = 10
 threshold = 0.75
 ```
+
+`query-prefix` and `document-prefix` are prepended to search queries and notes before embedding.
 
 Configuration values are resolved in this order:
 
@@ -132,8 +136,8 @@ For example, `ANNA_EMBEDDER_URL` sets `embedder.url` unless a CLI flag overrides
 | `hybrid` | `0.80 * vector + 0.20 * normalized BM25`. This is the default.                       |
 | `rrf`    | Reciprocal rank fusion of BM25 and vector rankings, rescored with cosine similarity. |
 
-The embedding model used to build the memory must match the embedding model used for recall.
-When `recall` reads several directories, term statistics are computed over all of them, and every memory must use the same embedding model.
+The embedding model and prefixes used to build the memory must match those used for recall.
+When `recall` reads several directories, term statistics are computed over all of them, and every memory must use the same embedding model and prefixes.
 
 ## Incremental indexing
 

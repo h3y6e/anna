@@ -28,14 +28,14 @@ type SearchIndexStore interface {
 		limit int,
 		embedder Embedder,
 		tokenizer Tokenizer,
-		embeddingModel string,
+		embedding EmbeddingProfile,
 		mode SearchMode,
 	) ([]SearchResult, error)
 }
 
 type Embedder interface {
-	Embed(ctx context.Context, text string) ([]float64, error)
-	EmbedBatch(ctx context.Context, texts []string) ([][]float64, error)
+	EmbedQuery(ctx context.Context, text string) ([]float64, error)
+	EmbedDocuments(ctx context.Context, texts []string) ([][]float64, error)
 }
 
 type Tokenizer interface {

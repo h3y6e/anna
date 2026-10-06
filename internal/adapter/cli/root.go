@@ -23,17 +23,25 @@ type Dependencies struct {
 
 // EmbedderSettings selects an OpenAI-compatible /v1/embeddings backend.
 type EmbedderSettings struct {
-	BaseURL string
-	Model   string
-	APIKey  string
+	BaseURL        string
+	Model          string
+	APIKey         string
+	QueryPrefix    string
+	DocumentPrefix string
 }
 
 func resolveEmbedderSettings(cfg *viper.Viper) EmbedderSettings {
 	return EmbedderSettings{
-		BaseURL: cfg.GetString("embedder.url"),
-		Model:   cfg.GetString("embedder.model"),
-		APIKey:  cfg.GetString("embedder.api-key"),
+		BaseURL:        cfg.GetString("embedder.url"),
+		Model:          cfg.GetString("embedder.model"),
+		APIKey:         cfg.GetString("embedder.api-key"),
+		QueryPrefix:    cfg.GetString("embedder.query-prefix"),
+		DocumentPrefix: cfg.GetString("embedder.document-prefix"),
 	}
+}
+
+func (s EmbedderSettings) profile() core.EmbeddingProfile {
+	return core.EmbeddingProfile{Model: s.Model, QueryPrefix: s.QueryPrefix, DocumentPrefix: s.DocumentPrefix}
 }
 
 func NewRootCommand(deps Dependencies) *cobra.Command {
@@ -78,11 +86,15 @@ The commands are named after sleep phases:
 	root.PersistentFlags().BoolP("quiet", "q", false, "suppress progress output")
 	root.PersistentFlags().String("embedder-url", "http://localhost:8080", "base URL of an OpenAI-compatible /v1/embeddings endpoint")
 	root.PersistentFlags().String("embedder-model", "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", "embedding model")
+	root.PersistentFlags().String("embedder-query-prefix", "", "text prepended to each search query before embedding")
+	root.PersistentFlags().String("embedder-document-prefix", "", "text prepended to each note before embedding")
 	root.PersistentFlags().Bool("json", false, "output results as JSON")
 	_ = cfg.BindPFlag("memory", root.PersistentFlags().Lookup("memory"))
 	_ = cfg.BindPFlag("quiet", root.PersistentFlags().Lookup("quiet"))
 	_ = cfg.BindPFlag("embedder.url", root.PersistentFlags().Lookup("embedder-url"))
 	_ = cfg.BindPFlag("embedder.model", root.PersistentFlags().Lookup("embedder-model"))
+	_ = cfg.BindPFlag("embedder.query-prefix", root.PersistentFlags().Lookup("embedder-query-prefix"))
+	_ = cfg.BindPFlag("embedder.document-prefix", root.PersistentFlags().Lookup("embedder-document-prefix"))
 	_ = cfg.BindPFlag("json", root.PersistentFlags().Lookup("json"))
 
 	root.AddCommand(newNREMCommand(cfg, deps))

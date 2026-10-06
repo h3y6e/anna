@@ -24,7 +24,7 @@ func Execute(version string) error {
 		},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(settings cli.EmbedderSettings) (core.Embedder, error) {
-			return openai.NewEmbedder(settings.BaseURL, settings.Model, settings.APIKey), nil
+			return openai.NewEmbedder(settings.BaseURL, settings.Model, settings.APIKey, settings.QueryPrefix, settings.DocumentPrefix), nil
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return tokenizer.New()

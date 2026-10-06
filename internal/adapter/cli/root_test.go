@@ -87,11 +87,11 @@ func writeFile(t *testing.T, path string, content string) {
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (fixedEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	return []float64{1, 0}, nil
 }
 
-func (fixedEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (fixedEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	out := make([][]float64, len(texts))
 	for i := range out {
 		out[i] = []float64{1, 0}
@@ -101,11 +101,11 @@ func (fixedEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64,
 
 type fakeEmbedder struct{}
 
-func (fakeEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
+func (fakeEmbedder) EmbedQuery(_ context.Context, text string) ([]float64, error) {
 	return fakeEmbedderVector(text), nil
 }
 
-func (fakeEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (fakeEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	out := make([][]float64, len(texts))
 	for i, text := range texts {
 		out[i] = fakeEmbedderVector(text)

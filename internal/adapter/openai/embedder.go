@@ -21,33 +21,42 @@ import (
 const transientEmbedRetryDelay = 500 * time.Millisecond
 
 type Embedder struct {
-	BaseURL string
-	Model   string
-	APIKey  string
-	Client  *http.Client
+	BaseURL        string
+	Model          string
+	APIKey         string
+	QueryPrefix    string
+	DocumentPrefix string
+	Client         *http.Client
 }
 
-func NewEmbedder(baseURL string, model string, apiKey string) Embedder {
+func NewEmbedder(baseURL string, model string, apiKey string, queryPrefix string, documentPrefix string) Embedder {
 	return Embedder{
-		BaseURL: baseURL,
-		Model:   model,
-		APIKey:  apiKey,
-		Client:  &http.Client{Timeout: 10 * time.Minute},
+		BaseURL:        baseURL,
+		Model:          model,
+		APIKey:         apiKey,
+		QueryPrefix:    queryPrefix,
+		DocumentPrefix: documentPrefix,
+		Client:         &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 
-func (e Embedder) Embed(ctx context.Context, text string) ([]float64, error) {
-	embeddings, err := e.EmbedBatch(ctx, []string{text})
+func (e Embedder) EmbedQuery(ctx context.Context, text string) ([]float64, error) {
+	embeddings, err := e.embed(ctx, []string{e.QueryPrefix + text})
 	if err != nil {
 		return nil, err
-	}
-	if len(embeddings) == 0 {
-		return nil, fmt.Errorf("embed: empty embedding response")
 	}
 	return embeddings[0], nil
 }
 
-func (e Embedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
+func (e Embedder) EmbedDocuments(ctx context.Context, texts []string) ([][]float64, error) {
+	prefixed := make([]string, len(texts))
+	for i, text := range texts {
+		prefixed[i] = e.DocumentPrefix + text
+	}
+	return e.embed(ctx, prefixed)
+}
+
+func (e Embedder) embed(ctx context.Context, texts []string) ([][]float64, error) {
 	baseURL := strings.TrimRight(e.BaseURL, "/")
 	if baseURL == "" {
 		return nil, fmt.Errorf("embedding base URL is required")

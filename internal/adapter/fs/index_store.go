@@ -30,6 +30,8 @@ var (
 var (
 	indexVersionKey        = []byte("version")
 	indexEmbeddingModelKey = []byte("embedding_model")
+	indexQueryPrefixKey    = []byte("query_prefix")
+	indexDocumentPrefixKey = []byte("document_prefix")
 	indexGeneratedAtKey    = []byte("generated_at")
 	indexDocumentCountKey  = []byte("document_count")
 	indexTotalLengthKey    = []byte("total_length")
@@ -126,8 +128,8 @@ func saveIndexToDB(ctx context.Context, db *bolt.DB, index *core.Index) error {
 		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(index.Version))); err != nil {
 			return fmt.Errorf("write index version: %w", err)
 		}
-		if err := meta.Put(indexEmbeddingModelKey, []byte(index.EmbeddingModel)); err != nil {
-			return fmt.Errorf("write index embedding model: %w", err)
+		if err := putEmbeddingProfile(meta, index.Embedding); err != nil {
+			return err
 		}
 		if err := meta.Put(indexGeneratedAtKey, []byte(index.GeneratedAt.Format(time.RFC3339Nano))); err != nil {
 			return fmt.Errorf("write index generated time: %w", err)
@@ -215,7 +217,7 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 			return fmt.Errorf("decode index version: %w", err)
 		}
 		manifest.Version = version
-		manifest.EmbeddingModel = string(meta.Get(indexEmbeddingModelKey))
+		manifest.Embedding = getEmbeddingProfile(meta)
 		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
 			parsed, err := strconv.Atoi(string(count))
 			if err != nil {
@@ -258,7 +260,7 @@ func (IndexStore) Search(
 	limit int,
 	embedder core.Embedder,
 	tokenizer core.Tokenizer,
-	embeddingModel string,
+	embedding core.EmbeddingProfile,
 	mode core.SearchMode,
 ) ([]core.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -293,7 +295,7 @@ func (IndexStore) Search(
 			return nil, fmt.Errorf("open index %s: %w", path, err)
 		}
 		memories = append(memories, memory{path: path, db: db})
-		if err := validateSearchIndex(ctx, db, embeddingModel, mode); err != nil {
+		if err := validateSearchIndex(ctx, db, embedding, mode); err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 	}
@@ -301,7 +303,7 @@ func (IndexStore) Search(
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
 		var err error
-		queryEmbedding, err = embedder.Embed(ctx, query)
+		queryEmbedding, err = embedder.EmbedQuery(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
@@ -398,7 +400,7 @@ func readSearchDocuments(
 	return docs, err
 }
 
-func validateSearchIndex(ctx context.Context, db *bolt.DB, embeddingModel string, mode core.SearchMode) error {
+func validateSearchIndex(ctx context.Context, db *bolt.DB, embedding core.EmbeddingProfile, mode core.SearchMode) error {
 	return db.View(func(tx *bolt.Tx) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -415,17 +417,31 @@ func validateSearchIndex(ctx context.Context, db *bolt.DB, embeddingModel string
 			return fmt.Errorf("unsupported index version %d", version)
 		}
 		if mode.RequiresEmbedding() {
-			indexEmbeddingModel := string(meta.Get(indexEmbeddingModelKey))
-			if indexEmbeddingModel != "" && embeddingModel != "" && indexEmbeddingModel != embeddingModel {
-				return fmt.Errorf(
-					"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
-					indexEmbeddingModel,
-					indexEmbeddingModel,
-				)
-			}
+			return core.ValidateSearchEmbedding(getEmbeddingProfile(meta), embedding)
 		}
 		return nil
 	})
+}
+
+func putEmbeddingProfile(meta *bolt.Bucket, embedding core.EmbeddingProfile) error {
+	if err := meta.Put(indexEmbeddingModelKey, []byte(embedding.Model)); err != nil {
+		return fmt.Errorf("write index embedding model: %w", err)
+	}
+	if err := meta.Put(indexQueryPrefixKey, []byte(embedding.QueryPrefix)); err != nil {
+		return fmt.Errorf("write index query prefix: %w", err)
+	}
+	if err := meta.Put(indexDocumentPrefixKey, []byte(embedding.DocumentPrefix)); err != nil {
+		return fmt.Errorf("write index document prefix: %w", err)
+	}
+	return nil
+}
+
+func getEmbeddingProfile(meta *bolt.Bucket) core.EmbeddingProfile {
+	return core.EmbeddingProfile{
+		Model:          string(meta.Get(indexEmbeddingModelKey)),
+		QueryPrefix:    string(meta.Get(indexQueryPrefixKey)),
+		DocumentPrefix: string(meta.Get(indexDocumentPrefixKey)),
+	}
 }
 
 func readQueryTermFrequencies(postingsBucket *bolt.Bucket, queryTerms []string) (map[string]map[string]int, error) {
@@ -493,7 +509,7 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 			return fmt.Errorf("decode index version: %w", err)
 		}
 		index.Version = version
-		index.EmbeddingModel = string(meta.Get(indexEmbeddingModelKey))
+		index.Embedding = getEmbeddingProfile(meta)
 		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
 			parsed, err := strconv.Atoi(string(count))
 			if err != nil {
