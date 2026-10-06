@@ -63,7 +63,7 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 				return err
 			}
 			searcher := core.NewSearcher(deps.IndexStore, embedder, tokenizer).
-				WithEmbeddingModel(settings.Model)
+				WithEmbedding(settings.profile())
 			memories := make([]string, len(scopes))
 			for i, scope := range scopes {
 				memories[i] = scope.Memory

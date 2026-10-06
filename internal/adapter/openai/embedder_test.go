@@ -13,7 +13,7 @@ import (
 	"github.com/h3y6e/anna/internal/core"
 )
 
-func TestEmbedBatchUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
+func TestEmbedDocumentsUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
 	t.Parallel()
 
 	requestErr := make(chan error, 1)
@@ -58,9 +58,9 @@ func TestEmbedBatchUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "").EmbedBatch(t.Context(), []string{"hello", "world"})
+	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err != nil {
-		t.Fatalf("EmbedBatch error = %v", err)
+		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if err := <-requestErr; err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestEmbedBatchUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
 	}
 }
 
-func TestEmbedBatchSendsBearerTokenWhenAPIKeyIsConfigured(t *testing.T) {
+func TestEmbedDocumentsSendsBearerTokenWhenAPIKeyIsConfigured(t *testing.T) {
 	t.Parallel()
 
 	authorization := make(chan string, 1)
@@ -88,15 +88,15 @@ func TestEmbedBatchSendsBearerTokenWhenAPIKeyIsConfigured(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	if _, err := NewEmbedder(server.URL, "test-model", "secret-key").EmbedBatch(t.Context(), []string{"hello"}); err != nil {
-		t.Fatalf("EmbedBatch error = %v", err)
+	if _, err := NewEmbedder(server.URL, "test-model", "secret-key", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
+		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if got := <-authorization; got != "Bearer secret-key" {
 		t.Fatalf("Authorization header = %q, want Bearer secret-key", got)
 	}
 }
 
-func TestEmbedBatchOmitsAuthorizationHeaderWhenAPIKeyIsEmpty(t *testing.T) {
+func TestEmbedDocumentsOmitsAuthorizationHeaderWhenAPIKeyIsEmpty(t *testing.T) {
 	t.Parallel()
 
 	authorization := make(chan string, 1)
@@ -111,15 +111,15 @@ func TestEmbedBatchOmitsAuthorizationHeaderWhenAPIKeyIsEmpty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	if _, err := NewEmbedder(server.URL, "test-model", "").EmbedBatch(t.Context(), []string{"hello"}); err != nil {
-		t.Fatalf("EmbedBatch error = %v", err)
+	if _, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
+		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if got := <-authorization; got != "" {
 		t.Fatalf("Authorization header = %q, want empty", got)
 	}
 }
 
-func TestEmbedBatchOrdersEmbeddingsByResponseIndex(t *testing.T) {
+func TestEmbedDocumentsOrdersEmbeddingsByResponseIndex(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -135,16 +135,16 @@ func TestEmbedBatchOrdersEmbeddingsByResponseIndex(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "").EmbedBatch(t.Context(), []string{"hello", "world"})
+	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err != nil {
-		t.Fatalf("EmbedBatch error = %v", err)
+		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if embeddings[0][0] != 1 || embeddings[1][1] != 1 {
 		t.Fatalf("embeddings = %#v, want ordered by index [[1 0] [0 1]]", embeddings)
 	}
 }
 
-func TestEmbedReturnsSingleEmbedding(t *testing.T) {
+func TestEmbedQueryReturnsSingleEmbedding(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -159,16 +159,16 @@ func TestEmbedReturnsSingleEmbedding(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embedding, err := NewEmbedder(server.URL, "test-model", "").Embed(t.Context(), "hello")
+	embedding, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedQuery(t.Context(), "hello")
 	if err != nil {
-		t.Fatalf("Embed error = %v", err)
+		t.Fatalf("EmbedQuery error = %v", err)
 	}
 	if len(embedding) != 2 || embedding[0] != 1 || embedding[1] != 0 {
 		t.Fatalf("embedding = %#v, want [1 0]", embedding)
 	}
 }
 
-func TestEmbedBatchSurfacesServerErrorMessage(t *testing.T) {
+func TestEmbedDocumentsSurfacesServerErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -178,16 +178,16 @@ func TestEmbedBatchSurfacesServerErrorMessage(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "missing", "").EmbedBatch(t.Context(), []string{"hello"})
+	_, err := NewEmbedder(server.URL, "missing", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err == nil {
-		t.Fatal("EmbedBatch error = nil, want model not found error")
+		t.Fatal("EmbedDocuments error = nil, want model not found error")
 	}
 	if want := "model 'missing' not found"; !strings.Contains(err.Error(), want) {
-		t.Fatalf("EmbedBatch error = %v, want message containing %q", err, want)
+		t.Fatalf("EmbedDocuments error = %v, want message containing %q", err, want)
 	}
 }
 
-func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenServerReportsContextOverflow(t *testing.T) {
+func TestEmbedDocumentsWrapsErrEmbedTextTooLargeWhenServerReportsContextOverflow(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -197,16 +197,16 @@ func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenServerReportsContextOverflow(t *
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "model", "").EmbedBatch(t.Context(), []string{"long text"})
+	_, err := NewEmbedder(server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"long text"})
 	if err == nil {
-		t.Fatal("EmbedBatch error = nil, want context overflow error")
+		t.Fatal("EmbedDocuments error = nil, want context overflow error")
 	}
 	if !errors.Is(err, core.ErrEmbedTextTooLarge) {
-		t.Fatalf("EmbedBatch error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
+		t.Fatalf("EmbedDocuments error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
 	}
 }
 
-func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenBatchExceedsPhysicalBatchSize(t *testing.T) {
+func TestEmbedDocumentsWrapsErrEmbedTextTooLargeWhenBatchExceedsPhysicalBatchSize(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -216,16 +216,16 @@ func TestEmbedBatchWrapsErrEmbedTextTooLargeWhenBatchExceedsPhysicalBatchSize(t 
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "model", "").EmbedBatch(t.Context(), []string{"a", "b"})
+	_, err := NewEmbedder(server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"a", "b"})
 	if err == nil {
-		t.Fatal("EmbedBatch error = nil, want physical batch size error")
+		t.Fatal("EmbedDocuments error = nil, want physical batch size error")
 	}
 	if !errors.Is(err, core.ErrEmbedTextTooLarge) {
-		t.Fatalf("EmbedBatch error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
+		t.Fatalf("EmbedDocuments error = %v, want error wrapping core.ErrEmbedTextTooLarge", err)
 	}
 }
 
-func TestEmbedBatchRetriesOnceWhenServerReturnsTransientEOF(t *testing.T) {
+func TestEmbedDocumentsRetriesOnceWhenServerReturnsTransientEOF(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int64
@@ -245,9 +245,9 @@ func TestEmbedBatchRetriesOnceWhenServerReturnsTransientEOF(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "").EmbedBatch(t.Context(), []string{"hello"})
+	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err != nil {
-		t.Fatalf("EmbedBatch error = %v", err)
+		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("request count = %d, want 2 (one retry after transient EOF)", calls.Load())
@@ -257,7 +257,7 @@ func TestEmbedBatchRetriesOnceWhenServerReturnsTransientEOF(t *testing.T) {
 	}
 }
 
-func TestEmbedBatchRejectsEmbeddingCountMismatch(t *testing.T) {
+func TestEmbedDocumentsRejectsEmbeddingCountMismatch(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -272,26 +272,65 @@ func TestEmbedBatchRejectsEmbeddingCountMismatch(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "test-model", "").EmbedBatch(t.Context(), []string{"hello", "world"})
+	_, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err == nil {
-		t.Fatal("EmbedBatch error = nil, want embedding count mismatch error")
+		t.Fatal("EmbedDocuments error = nil, want embedding count mismatch error")
 	}
 }
 
-func TestEmbedBatchRequiresModel(t *testing.T) {
+func TestEmbedDocumentsRequiresModel(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewEmbedder("http://embedder.example", "", "").EmbedBatch(t.Context(), []string{"hello"})
+	_, err := NewEmbedder("http://embedder.example", "", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err == nil || !strings.Contains(err.Error(), "model is required") {
-		t.Fatalf("EmbedBatch error = %v, want model is required", err)
+		t.Fatalf("EmbedDocuments error = %v, want model is required", err)
 	}
 }
 
-func TestEmbedBatchRequiresBaseURL(t *testing.T) {
+func TestEmbedDocumentsRequiresBaseURL(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewEmbedder("", "test-model", "").EmbedBatch(t.Context(), []string{"hello"})
+	_, err := NewEmbedder("", "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err == nil || !strings.Contains(err.Error(), "base URL is required") {
-		t.Fatalf("EmbedBatch error = %v, want base URL is required", err)
+		t.Fatalf("EmbedDocuments error = %v, want base URL is required", err)
+	}
+}
+
+func TestEmbedQueryAndEmbedDocumentsPrependTheirConfiguredPrefixes(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	var inputs [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		inputs = append(inputs, payload.Input)
+		data := make([]map[string]any, len(payload.Input))
+		for i := range payload.Input {
+			data[i] = map[string]any{"index": i, "embedding": []float64{1}}
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"data": data}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	embedder := NewEmbedder(server.URL, "test-model", "", "query: ", "passage: ")
+
+	// Act
+	if _, err := embedder.EmbedQuery(t.Context(), "猫"); err != nil {
+		t.Fatalf("EmbedQuery error = %v", err)
+	}
+	if _, err := embedder.EmbedDocuments(t.Context(), []string{"a", "b"}); err != nil {
+		t.Fatalf("EmbedDocuments error = %v", err)
+	}
+
+	// Assert
+	want := [][]string{{"query: 猫"}, {"passage: a", "passage: b"}}
+	if fmt.Sprint(inputs) != fmt.Sprint(want) {
+		t.Fatalf("inputs = %q, want %q", inputs, want)
 	}
 }

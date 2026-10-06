@@ -30,9 +30,9 @@ type Indexer struct {
 	embedder  Embedder
 	tokenizer Tokenizer
 
-	embeddingModel string
-	ignoredPath    string
-	progress       func(IndexProgress)
+	embedding   EmbeddingProfile
+	ignoredPath string
+	progress    func(IndexProgress)
 }
 
 type IndexBuildOptions struct {
@@ -43,8 +43,9 @@ func NewIndexer(source TextSource, store IndexStore, embedder Embedder, tokenize
 	return &Indexer{source: source, store: store, embedder: embedder, tokenizer: tokenizer}
 }
 
-func (i *Indexer) WithEmbeddingModel(model string) *Indexer {
-	i.embeddingModel = strings.TrimSpace(model)
+func (i *Indexer) WithEmbedding(embedding EmbeddingProfile) *Indexer {
+	embedding.Model = strings.TrimSpace(embedding.Model)
+	i.embedding = embedding
 	return i
 }
 
@@ -156,13 +157,13 @@ func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath
 func (i *Indexer) canReuseExistingIndex(index *Index) bool {
 	return index != nil &&
 		index.Version == IndexVersion &&
-		index.EmbeddingModel == i.embeddingModel
+		index.Embedding == i.embedding
 }
 
 func (i *Indexer) canReuseManifest(manifest *IndexManifest) bool {
 	return manifest != nil &&
 		manifest.Version == IndexVersion &&
-		manifest.EmbeddingModel == i.embeddingModel
+		manifest.Embedding == i.embedding
 }
 
 func (i *Indexer) readTextFiles(ctx context.Context, source string) ([]TextFile, error) {
@@ -301,7 +302,7 @@ func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Docum
 }
 
 func (i *Indexer) embedBatchWithFallback(ctx context.Context, texts []string) ([][]float64, error) {
-	embeddings, err := i.embedder.EmbedBatch(ctx, texts)
+	embeddings, err := i.embedder.EmbedDocuments(ctx, texts)
 	if err == nil {
 		return embeddings, nil
 	}
@@ -321,9 +322,9 @@ func (i *Indexer) embedBatchWithFallback(ctx context.Context, texts []string) ([
 }
 
 func (i *Indexer) embedText(ctx context.Context, text string) ([]float64, error) {
-	embedding, err := i.embedder.Embed(ctx, text)
+	embeddings, err := i.embedder.EmbedDocuments(ctx, []string{text})
 	if err == nil {
-		return embedding, nil
+		return embeddings[0], nil
 	}
 	if !errors.Is(err, ErrEmbedTextTooLarge) {
 		return nil, err
@@ -383,20 +384,20 @@ func averageEmbeddings(a []float64, b []float64) []float64 {
 
 func (i *Indexer) newIndex(docs []Document) *Index {
 	return &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: i.embeddingModel,
-		DocumentCount:  len(docs),
-		GeneratedAt:    time.Now().UTC(),
-		Documents:      docs,
+		Version:       IndexVersion,
+		Embedding:     i.embedding,
+		DocumentCount: len(docs),
+		GeneratedAt:   time.Now().UTC(),
+		Documents:     docs,
 	}
 }
 
 func (i *Indexer) newIndexSummary(documentCount int, generatedAt time.Time) *Index {
 	return &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: i.embeddingModel,
-		DocumentCount:  documentCount,
-		GeneratedAt:    generatedAt,
+		Version:       IndexVersion,
+		Embedding:     i.embedding,
+		DocumentCount: documentCount,
+		GeneratedAt:   generatedAt,
 	}
 }
 
@@ -405,7 +406,7 @@ type Searcher struct {
 	embedder  Embedder
 	tokenizer Tokenizer
 
-	embeddingModel string
+	embedding EmbeddingProfile
 }
 
 type SearchMode string
@@ -444,8 +445,9 @@ func NewSearcher(store IndexStore, embedder Embedder, tokenizer Tokenizer) *Sear
 	return &Searcher{store: store, embedder: embedder, tokenizer: tokenizer}
 }
 
-func (s *Searcher) WithEmbeddingModel(model string) *Searcher {
-	s.embeddingModel = strings.TrimSpace(model)
+func (s *Searcher) WithEmbedding(embedding EmbeddingProfile) *Searcher {
+	embedding.Model = strings.TrimSpace(embedding.Model)
+	s.embedding = embedding
 	return s
 }
 
@@ -474,7 +476,7 @@ func (s *Searcher) SearchFiles(
 		return nil, fmt.Errorf("tokenizer is required")
 	}
 	if store, ok := s.store.(SearchIndexStore); ok {
-		return store.Search(ctx, indexPaths, query, limit, s.embedder, s.tokenizer, s.embeddingModel, mode)
+		return store.Search(ctx, indexPaths, query, limit, s.embedder, s.tokenizer, s.embedding, mode)
 	}
 
 	merged := &Index{Version: IndexVersion}
@@ -484,7 +486,7 @@ func (s *Searcher) SearchFiles(
 			return nil, err
 		}
 		if mode.RequiresEmbedding() {
-			if err := validateSearchEmbeddingModel(index, s.embeddingModel); err != nil {
+			if err := ValidateSearchEmbedding(index.Embedding, s.embedding); err != nil {
 				return nil, err
 			}
 		}
@@ -496,7 +498,7 @@ func (s *Searcher) SearchFiles(
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
 		var err error
-		queryEmbedding, err = s.embedder.Embed(ctx, query)
+		queryEmbedding, err = s.embedder.EmbedQuery(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
@@ -512,15 +514,24 @@ func ResolveDocumentPath(indexPath string, documentPath string) string {
 	return filepath.Join(filepath.Dir(indexPath), filepath.FromSlash(documentPath))
 }
 
-func validateSearchEmbeddingModel(index *Index, embeddingModel string) error {
-	if index == nil || index.EmbeddingModel == "" || embeddingModel == "" || index.EmbeddingModel == embeddingModel {
-		return nil
+func ValidateSearchEmbedding(recorded EmbeddingProfile, configured EmbeddingProfile) error {
+	if recorded.Model != "" && configured.Model != "" && recorded.Model != configured.Model {
+		return fmt.Errorf(
+			"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
+			recorded.Model,
+			recorded.Model,
+		)
 	}
-	return fmt.Errorf(
-		"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
-		index.EmbeddingModel,
-		index.EmbeddingModel,
-	)
+	if recorded.QueryPrefix != configured.QueryPrefix || recorded.DocumentPrefix != configured.DocumentPrefix {
+		return fmt.Errorf(
+			"index was built with query prefix %q and document prefix %q; search with --embedder-query-prefix %q --embedder-document-prefix %q or rebuild index",
+			recorded.QueryPrefix,
+			recorded.DocumentPrefix,
+			recorded.QueryPrefix,
+			recorded.DocumentPrefix,
+		)
+	}
+	return nil
 }
 
 func validateSearchEmbeddings(index *Index, queryEmbedding []float64) error {

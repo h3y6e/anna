@@ -67,7 +67,7 @@ Without arguments, nrem builds the notes directories set in the config.`,
 				return err
 			}
 			for _, scope := range scopes {
-				if err := consolidate(cmd, deps, tokenizer, embedder, settings.Model, scope, amnesia, jsonOutput); err != nil {
+				if err := consolidate(cmd, deps, tokenizer, embedder, settings.profile(), scope, amnesia, jsonOutput); err != nil {
 					return err
 				}
 			}
@@ -87,19 +87,19 @@ func consolidate(
 	deps Dependencies,
 	tokenizer core.Tokenizer,
 	embedder core.Embedder,
-	model string,
+	embedding core.EmbeddingProfile,
 	scope notesScope,
 	amnesia bool,
 	jsonOutput bool,
 ) error {
 	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "nrem\t%s\t%s\tmodel=%s\n", scope.Dir, scope.Memory, model)
+	fmt.Fprintf(w, "nrem\t%s\t%s\tmodel=%s\n", scope.Dir, scope.Memory, embedding.Model)
 	var source core.TextSource
 	if deps.NewTextSource != nil {
 		source = deps.NewTextSource()
 	}
 	indexer := core.NewIndexer(source, deps.IndexStore, embedder, tokenizer).
-		WithEmbeddingModel(model).
+		WithEmbedding(embedding).
 		WithIgnoredPath(filepath.Base(scope.Memory)).
 		WithProgress(func(p core.IndexProgress) {
 			if p.Cached {

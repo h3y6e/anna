@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/h3y6e/anna/internal/adapter/fs"
@@ -118,5 +119,83 @@ func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 	}
 	if settings.Model != "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0" {
 		t.Fatalf("model = %q, want default model", settings.Model)
+	}
+}
+
+func TestNREMFlagsSetEmbedderPrefixes(t *testing.T) {
+	t.Parallel()
+
+	// Act
+	settings, err := nremWithEmbedderSpy(t,
+		"--embedder-query-prefix", "query: ",
+		"--embedder-document-prefix", "passage: ",
+	)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("nrem command failed: %v", err)
+	}
+	if settings.QueryPrefix != "query: " || settings.DocumentPrefix != "passage: " {
+		t.Fatalf("prefixes = %q, %q, want query: and passage: ", settings.QueryPrefix, settings.DocumentPrefix)
+	}
+}
+
+func TestEmbedderQueryPrefixEnvVarReachesEmbedderFactory(t *testing.T) {
+	// Arrange
+	t.Setenv("ANNA_EMBEDDER_QUERY_PREFIX", "query: ")
+
+	// Act
+	settings, err := nremWithEmbedderSpy(t)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("nrem command failed: %v", err)
+	}
+	if settings.QueryPrefix != "query: " {
+		t.Fatalf("query prefix = %q, want query: from ANNA_EMBEDDER_QUERY_PREFIX", settings.QueryPrefix)
+	}
+}
+
+func TestNREMReadsEmbedderPrefixesFromTOMLConfig(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	configPath := filepath.Join(tempDir(t), "anna.toml")
+	writeFile(t, configPath, "[embedder]\nquery-prefix = \"Instruct: find notes\\nQuery: \"\ndocument-prefix = \"doc: \"\n")
+
+	// Act
+	settings, err := nremWithEmbedderSpy(t, "--config", configPath)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("nrem command failed: %v", err)
+	}
+	if settings.QueryPrefix != "Instruct: find notes\nQuery: " || settings.DocumentPrefix != "doc: " {
+		t.Fatalf("prefixes = %q, %q, want config values", settings.QueryPrefix, settings.DocumentPrefix)
+	}
+}
+
+func TestRecallFailsWhenPrefixesDifferFromThoseTheMemoryWasBuiltWith(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	notes := tempDir(t)
+	writeFile(t, filepath.Join(notes, "note.md"), "note content\n")
+	deps := testDependencies(Dependencies{
+		NewTextSource: func() core.TextSource { return fs.TextSource{} },
+		IndexStore:    fs.IndexStore{},
+		NewEmbedder:   func(EmbedderSettings) (core.Embedder, error) { return fakeEmbedder{}, nil },
+		NewTokenizer:  func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
+	})
+	if _, stderr, err := executeCommandWithDependencies(deps, "nrem", notes, "--embedder-query-prefix", "query: "); err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Act
+	_, _, err := executeCommandWithDependencies(deps, "recall", "--in", notes, "note")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "query: "`) {
+		t.Fatalf("recall error = %v, want prefix mismatch", err)
 	}
 }

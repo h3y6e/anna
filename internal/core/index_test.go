@@ -53,8 +53,8 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
+		Version:   IndexVersion,
+		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
 				Path: "keep.md",
@@ -68,9 +68,9 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
-		DocumentCount:  1,
+		Version:       IndexVersion,
+		Embedding:     EmbeddingProfile{Model: "model"},
+		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
 			"keep.md": {ContentHash: contentHash(unchangedContent)},
 		},
@@ -79,7 +79,7 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "keep.md", Content: unchangedContent},
 		{Path: "new.md", Content: "# New\n\nnew body"},
-	}}, store, embedder, fixedTokenizer{}).WithEmbeddingModel("model").
+	}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
 		BuildAndSave(t.Context(), "notes", "memory.db")
 	if err != nil {
 		t.Fatalf("BuildAndSave error = %v", err)
@@ -106,8 +106,8 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
+		Version:   IndexVersion,
+		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
 				Path: "keep.md",
@@ -121,15 +121,15 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
-		DocumentCount:  1,
+		Version:       IndexVersion,
+		Embedding:     EmbeddingProfile{Model: "model"},
+		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
 			"keep.md": {ContentHash: contentHash(content)},
 		},
 	}
 	embedder := &countingEmbedder{embedding: []float64{1, 0}}
-	index, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbeddingModel("model").
+	index, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
 		BuildAndSave(t.Context(), "notes", "memory.db")
 	if err != nil {
 		t.Fatalf("BuildAndSave error = %v", err)
@@ -156,7 +156,7 @@ func TestIndexerBuildEmbedsDocumentsInBatches(t *testing.T) {
 		{Path: "a.md", Content: "# A\n"},
 		{Path: "b.md", Content: "# B\n"},
 		{Path: "c.md", Content: "# C\n"},
-	}}, nil, embedder, fixedTokenizer{}).WithEmbeddingModel("model").
+	}}, nil, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
 		Build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
@@ -179,8 +179,8 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
+		Version:   IndexVersion,
+		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
 				Path:        "keep.md",
@@ -193,7 +193,7 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 		},
 	}}
 	embedder := &countingEmbedder{embedding: []float64{1, 0}}
-	_, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbeddingModel("model").
+	_, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
 		BuildAndSaveWithOptions(t.Context(), "notes", "memory.db", IndexBuildOptions{Rebuild: true})
 	if err != nil {
 		t.Fatalf("BuildAndSaveWithOptions error = %v", err)
@@ -566,8 +566,8 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
+		Version:   IndexVersion,
+		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
 				Path: "keep.md",
@@ -581,9 +581,9 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:        IndexVersion,
-		EmbeddingModel: "model",
-		DocumentCount:  1,
+		Version:       IndexVersion,
+		Embedding:     EmbeddingProfile{Model: "model"},
+		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
 			"keep.md": {ContentHash: contentHash(unchangedContent)},
 		},
@@ -593,7 +593,7 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 		{Path: "keep.md", Content: unchangedContent},
 		{Path: "new.md", Content: "# New\n\nnew body"},
 	}}, store, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
-		WithEmbeddingModel("model").
+		WithEmbedding(EmbeddingProfile{Model: "model"}).
 		WithProgress(func(p IndexProgress) { progress = append(progress, p) }).
 		BuildAndSave(t.Context(), "notes", "memory.db")
 	if err != nil {
@@ -668,11 +668,11 @@ type fixedEmbedder struct {
 	embedding []float64
 }
 
-func (e fixedEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (e fixedEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	return e.embedding, nil
 }
 
-func (e fixedEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (e fixedEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	out := make([][]float64, len(texts))
 	for i := range out {
 		out[i] = e.embedding
@@ -685,12 +685,12 @@ type countingEmbedder struct {
 	calls     int
 }
 
-func (e *countingEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (e *countingEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	e.calls++
 	return e.embedding, nil
 }
 
-func (e *countingEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (e *countingEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	e.calls++
 	out := make([][]float64, len(texts))
 	for i := range out {
@@ -706,7 +706,23 @@ type contextLimitedEmbedder struct {
 	successfulTexts []string
 }
 
-func (e *contextLimitedEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
+func (e *contextLimitedEmbedder) EmbedQuery(_ context.Context, text string) ([]float64, error) {
+	return e.embed(text)
+}
+
+func (e *contextLimitedEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		embedding, err := e.embed(text)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = embedding
+	}
+	return out, nil
+}
+
+func (e *contextLimitedEmbedder) embed(text string) ([]float64, error) {
 	if len([]rune(text)) > e.maxRunes {
 		return nil, fmt.Errorf("input too large: %w", ErrEmbedTextTooLarge)
 	}
@@ -716,27 +732,15 @@ func (e *contextLimitedEmbedder) Embed(_ context.Context, text string) ([]float6
 	return []float64{float64(len([]rune(text))), 1}, nil
 }
 
-func (e *contextLimitedEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float64, error) {
-	out := make([][]float64, len(texts))
-	for i, text := range texts {
-		embedding, err := e.Embed(ctx, text)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = embedding
-	}
-	return out, nil
-}
-
 type failingEmbedder struct {
 	err error
 }
 
-func (e failingEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (e failingEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	return nil, e.err
 }
 
-func (e failingEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (e failingEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	return nil, e.err
 }
 
@@ -777,5 +781,69 @@ func (cjkTokenizer) TokenizeQuery(_ context.Context, text string) ([]string, err
 		return []string{"投票", "作成"}, nil
 	default:
 		return strings.Fields(strings.ToLower(text)), nil
+	}
+}
+
+func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	content := "# Keep\n\nsame body"
+	previous := EmbeddingProfile{Model: "model", QueryPrefix: "query: ", DocumentPrefix: "old: "}
+	store := &capturingIndexStore{index: &Index{
+		Version:   IndexVersion,
+		Embedding: previous,
+		Documents: []Document{{
+			Path:        "keep.md",
+			Content:     content,
+			ContentHash: contentHash(content),
+			Terms:       map[string]int{"keep": 1},
+			Length:      1,
+			Embedding:   []float64{0, 1},
+		}},
+	}}
+	store.manifest = &IndexManifest{
+		Version:       IndexVersion,
+		Embedding:     previous,
+		DocumentCount: 1,
+		Documents:     map[string]DocumentManifest{"keep.md": {ContentHash: contentHash(content)}},
+	}
+	current := EmbeddingProfile{Model: "model", QueryPrefix: "query: ", DocumentPrefix: "new: "}
+	embedder := &countingEmbedder{embedding: []float64{1, 0}}
+
+	// Act
+	index, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).
+		WithEmbedding(current).
+		BuildAndSave(t.Context(), "notes", "memory.db")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("BuildAndSave error = %v", err)
+	}
+	if got := index.Documents[0].Embedding; got[0] != 1 || got[1] != 0 {
+		t.Fatalf("embedding = %v, want a fresh embedding", got)
+	}
+	if store.saved == nil || store.saved.Embedding != current {
+		t.Fatalf("saved index = %+v, want embedding profile %+v", store.saved, current)
+	}
+}
+
+func TestSearcherRejectsIndexBuiltWithDifferentPrefixes(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	store := stubIndexStore{index: &Index{
+		Embedding: EmbeddingProfile{Model: "model"},
+		Documents: []Document{{Path: "note.md", Embedding: []float64{1, 0}}},
+	}}
+	searcher := NewSearcher(store, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
+		WithEmbedding(EmbeddingProfile{Model: "model", QueryPrefix: "query: ", DocumentPrefix: "passage: "})
+
+	// Act
+	_, err := searcher.SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "" and document prefix ""`) {
+		t.Fatalf("SearchFiles error = %v, want prefix mismatch", err)
 	}
 }

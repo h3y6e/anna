@@ -19,8 +19,8 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
-		Version:        core.IndexVersion,
-		EmbeddingModel: "model-a",
+		Version:   core.IndexVersion,
+		Embedding: core.EmbeddingProfile{Model: "model-a"},
 		Documents: []core.Document{
 			{
 				Path: "note.md",
@@ -44,7 +44,7 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 	if got := loaded.Documents[0].Path; got != "note.md" {
 		t.Fatalf("loaded document path = %q, want note.md", got)
 	}
-	if got := loaded.EmbeddingModel; got != "model-a" {
+	if got := loaded.Embedding.Model; got != "model-a" {
 		t.Fatalf("loaded embedding model = %q, want model-a", got)
 	}
 	if got := loaded.Documents[0].ContentHash; got != "hash-a" {
@@ -99,8 +99,8 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
-		Version:        core.IndexVersion,
-		EmbeddingModel: "model-a",
+		Version:   core.IndexVersion,
+		Embedding: core.EmbeddingProfile{Model: "model-a"},
 		Documents: []core.Document{
 			{
 				Path: "note.md",
@@ -127,7 +127,7 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 	if got := manifest.Documents["note.md"].ContentHash; got != "hash-a" {
 		t.Fatalf("manifest content hash = %q, want hash-a", got)
 	}
-	if got := manifest.EmbeddingModel; got != "model-a" {
+	if got := manifest.Embedding.Model; got != "model-a" {
 		t.Fatalf("manifest embedding model = %q, want model-a", got)
 	}
 }
@@ -169,7 +169,7 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 		1,
 		fixedEmbedder{embedding: []float64{1, 0}},
 		fixedTokenizer{tokens: []string{"alpha"}},
-		"",
+		core.EmbeddingProfile{},
 		core.SearchModeHybrid,
 	)
 	if err != nil {
@@ -208,7 +208,7 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 		1,
 		nil,
 		fixedTokenizer{tokens: []string{"alpha"}},
-		"different-model",
+		core.EmbeddingProfile{Model: "different-model"},
 		core.SearchModeBM25,
 	)
 	if err != nil {
@@ -225,8 +225,8 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
-		Version:        core.IndexVersion,
-		EmbeddingModel: "model-a",
+		Version:   core.IndexVersion,
+		Embedding: core.EmbeddingProfile{Model: "model-a"},
 		Documents: []core.Document{
 			{
 				Path:      "note.md",
@@ -248,7 +248,7 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 		1,
 		errorEmbedder{},
 		fixedTokenizer{tokens: []string{"content"}},
-		"model-b",
+		core.EmbeddingProfile{Model: "model-b"},
 		core.SearchModeHybrid,
 	)
 	if err == nil || !strings.Contains(err.Error(), "index was built with embedding model model-a") {
@@ -279,7 +279,7 @@ func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.
 		10,
 		fixedEmbedder{embedding: []float64{1, 0}},
 		fixedTokenizer{tokens: []string{"todo"}},
-		"",
+		core.EmbeddingProfile{},
 		core.SearchModeRRF,
 	)
 	if err != nil {
@@ -314,7 +314,7 @@ func TestIndexStoreSearchOverSeveralMemoriesScoresTermsAgainstTheCombinedCorpus(
 		core.Document{Path: "f.md", Content: "other", Terms: map[string]int{"other": 1}, Length: 1},
 	)
 	search := func(paths ...string) float64 {
-		results, err := store.Search(t.Context(), paths, "go", 10, nil, fixedTokenizer{tokens: []string{"go"}}, "", core.SearchModeBM25)
+		results, err := store.Search(t.Context(), paths, "go", 10, nil, fixedTokenizer{tokens: []string{"go"}}, core.EmbeddingProfile{}, core.SearchModeBM25)
 		if err != nil {
 			t.Fatalf("Search error = %v", err)
 		}
@@ -345,7 +345,7 @@ func TestIndexStoreSearchRejectsMemoriesBuiltWithDifferentEmbeddingModels(t *tes
 	saveMemory(t, store, a, "model-a", doc)
 	saveMemory(t, store, b, "model-b", doc)
 
-	_, err := store.Search(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, "model-a", core.SearchModeHybrid)
+	_, err := store.Search(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, core.EmbeddingProfile{Model: "model-a"}, core.SearchModeHybrid)
 
 	if err == nil || !strings.Contains(err.Error(), "index was built with embedding model model-b") {
 		t.Fatalf("Search error = %v, want embedding model mismatch", err)
@@ -357,7 +357,7 @@ func saveMemory(t *testing.T, store IndexStore, path string, embeddingModel stri
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := store.Save(t.Context(), path, &core.Index{Version: core.IndexVersion, EmbeddingModel: embeddingModel, Documents: docs}); err != nil {
+	if err := store.Save(t.Context(), path, &core.Index{Version: core.IndexVersion, Embedding: core.EmbeddingProfile{Model: embeddingModel}, Documents: docs}); err != nil {
 		t.Fatalf("save memory %s: %v", path, err)
 	}
 }
@@ -375,11 +375,11 @@ type fixedEmbedder struct {
 	embedding []float64
 }
 
-func (e fixedEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (e fixedEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	return e.embedding, nil
 }
 
-func (e fixedEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+func (e fixedEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]float64, error) {
 	out := make([][]float64, len(texts))
 	for i := range out {
 		out[i] = e.embedding
@@ -389,11 +389,11 @@ func (e fixedEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float6
 
 type errorEmbedder struct{}
 
-func (errorEmbedder) Embed(context.Context, string) ([]float64, error) {
+func (errorEmbedder) EmbedQuery(context.Context, string) ([]float64, error) {
 	return nil, fmt.Errorf("embedder should not be called")
 }
 
-func (errorEmbedder) EmbedBatch(context.Context, []string) ([][]float64, error) {
+func (errorEmbedder) EmbedDocuments(context.Context, []string) ([][]float64, error) {
 	return nil, fmt.Errorf("embedder should not be called")
 }
 
@@ -407,4 +407,52 @@ func (t fixedTokenizer) TokenizeDocument(context.Context, string) ([]string, err
 
 func (t fixedTokenizer) TokenizeQuery(context.Context, string) ([]string, error) {
 	return t.tokens, nil
+}
+
+func TestIndexStoreSaveRecordsEmbeddingPrefixesForLoadAndLoadManifest(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	path := filepath.Join(t.TempDir(), "memory.db")
+	store := IndexStore{}
+	profile := core.EmbeddingProfile{Model: "model-a", QueryPrefix: "query: ", DocumentPrefix: "passage: "}
+
+	// Act
+	if err := store.Save(t.Context(), path, &core.Index{Version: core.IndexVersion, Embedding: profile}); err != nil {
+		t.Fatalf("Save error = %v", err)
+	}
+	loaded, err := store.Load(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Load error = %v", err)
+	}
+	manifest, err := store.LoadManifest(t.Context(), path)
+	if err != nil {
+		t.Fatalf("LoadManifest error = %v", err)
+	}
+
+	// Assert
+	if loaded.Embedding != profile {
+		t.Fatalf("loaded embedding profile = %+v, want %+v", loaded.Embedding, profile)
+	}
+	if manifest.Embedding != profile {
+		t.Fatalf("manifest embedding profile = %+v, want %+v", manifest.Embedding, profile)
+	}
+}
+
+func TestIndexStoreSearchRejectsPrefixMismatchBeforeEmbedding(t *testing.T) {
+	t.Parallel()
+
+	// Arrange
+	path := filepath.Join(t.TempDir(), ".anna.db")
+	store := IndexStore{}
+	saveMemory(t, store, path, "model-a", core.Document{Path: "note.md", Content: "note", Terms: map[string]int{"note": 1}, Length: 1, Embedding: []float64{1, 0}})
+	configured := core.EmbeddingProfile{Model: "model-a", QueryPrefix: "query: "}
+
+	// Act
+	_, err := store.Search(t.Context(), []string{path}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, configured, core.SearchModeHybrid)
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "" and document prefix ""`) {
+		t.Fatalf("Search error = %v, want prefix mismatch", err)
+	}
 }

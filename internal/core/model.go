@@ -4,12 +4,18 @@ import "time"
 
 const IndexVersion = 5
 
+type EmbeddingProfile struct {
+	Model          string `json:"model,omitempty"`
+	QueryPrefix    string `json:"query_prefix,omitempty"`
+	DocumentPrefix string `json:"document_prefix,omitempty"`
+}
+
 type Index struct {
-	Version        int        `json:"version"`
-	EmbeddingModel string     `json:"embedding_model,omitempty"`
-	DocumentCount  int        `json:"document_count,omitempty"`
-	GeneratedAt    time.Time  `json:"generated_at"`
-	Documents      []Document `json:"documents"`
+	Version       int              `json:"version"`
+	Embedding     EmbeddingProfile `json:"embedding"`
+	DocumentCount int              `json:"document_count,omitempty"`
+	GeneratedAt   time.Time        `json:"generated_at"`
+	Documents     []Document       `json:"documents"`
 }
 
 func (i *Index) Count() int {
@@ -23,11 +29,11 @@ func (i *Index) Count() int {
 }
 
 type IndexManifest struct {
-	Version        int
-	EmbeddingModel string
-	DocumentCount  int
-	GeneratedAt    time.Time
-	Documents      map[string]DocumentManifest
+	Version       int
+	Embedding     EmbeddingProfile
+	DocumentCount int
+	GeneratedAt   time.Time
+	Documents     map[string]DocumentManifest
 }
 
 type DocumentManifest struct {
