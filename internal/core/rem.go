@@ -51,7 +51,7 @@ func (r *REMer) REM(ctx context.Context, memoryPath string, options REMOptions) 
 	if r.store == nil {
 		return nil, fmt.Errorf("memory store is required")
 	}
-	options, err := normalizeREMOptions(options)
+	options, err := options.normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (r *REMer) REM(ctx context.Context, memoryPath string, options REMOptions) 
 }
 
 func REM(memory *Index, options REMOptions) ([]REMCandidate, error) {
-	options, err := normalizeREMOptions(options)
+	options, err := options.normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,8 @@ type remPair struct {
 	sameContent bool
 }
 
-func normalizeREMOptions(options REMOptions) (REMOptions, error) {
+// normalize fills defaults and rejects unsupported options.
+func (options REMOptions) normalize() (REMOptions, error) {
 	if options.Focus == "" {
 		options.Focus = REMFocusAll
 	}

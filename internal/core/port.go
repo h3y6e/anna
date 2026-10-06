@@ -23,7 +23,7 @@ type IndexManifestStore interface {
 type SearchIndexStore interface {
 	Search(
 		ctx context.Context,
-		path string,
+		paths []string,
 		query string,
 		limit int,
 		embedder Embedder,

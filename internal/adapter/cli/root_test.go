@@ -15,12 +15,10 @@ import (
 func TestNREMAndRecallMarkdownMemory(t *testing.T) {
 	t.Parallel()
 
-	source := t.TempDir()
+	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "ai.md"), "# AI Notes\n\nRetrieval augmented generation keeps local knowledge searchable.\n")
 	writeFile(t, filepath.Join(source, "cooking.md"), "# Cooking\n\nMiso soup needs dashi, tofu, and wakame.\n")
-	memoryPath := filepath.Join(t.TempDir(), "memory.db")
-
-	stdout, stderr, err := executeCommand("nrem", source, "--memory", memoryPath)
+	stdout, stderr, err := executeCommand("nrem", source)
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -30,7 +28,7 @@ func TestNREMAndRecallMarkdownMemory(t *testing.T) {
 
 	stdout, stderr, err = executeCommand(
 		"recall",
-		"--memory", memoryPath,
+		"--in", source,
 		"retrieval augmented generation",
 		"--limit", "1",
 	)
@@ -153,4 +151,14 @@ func (s *spyIndexStore) Load(_ context.Context, path string) (*core.Index, error
 func (s *spyIndexStore) Save(context.Context, string, *core.Index) error {
 	s.saved = true
 	return nil
+}
+
+// tempDir returns a temporary directory with symlinks resolved, matching the paths anna reports.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
+	return dir
 }

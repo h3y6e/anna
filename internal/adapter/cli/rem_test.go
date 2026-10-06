@@ -14,7 +14,8 @@ import (
 func TestREMReportsMemoryCandidates(t *testing.T) {
 	t.Parallel()
 
-	memoryPath := filepath.Join(t.TempDir(), "memory.db")
+	notes := tempDir(t)
+	memoryPath := filepath.Join(notes, ".anna.db")
 	store := fs.IndexStore{}
 	if err := store.Save(t.Context(), memoryPath, &core.Index{Version: core.IndexVersion, Documents: []core.Document{
 		{
@@ -37,17 +38,17 @@ func TestREMReportsMemoryCandidates(t *testing.T) {
 		t.Fatalf("save fixture memory: %v", err)
 	}
 
-	stdout, stderr, err := executeCommand("rem", "--memory", memoryPath, "--focus", "echo", "--json")
+	stdout, stderr, err := executeCommand("rem", "--in", notes, "--focus", "echo", "--json")
 	if err != nil {
 		t.Fatalf("rem command failed: %v\nstderr: %s", err, stderr)
 	}
 	if !strings.Contains(stdout, `"focus":"echo"`) {
 		t.Fatalf("rem stdout = %q, want echo candidate", stdout)
 	}
-	if !strings.Contains(stdout, `"left_path":"alpha-copy.md"`) {
+	if !strings.Contains(stdout, fmt.Sprintf(`"left_path":%q`, filepath.Join(notes, "alpha-copy.md"))) {
 		t.Fatalf("rem stdout = %q, want stable left path", stdout)
 	}
-	if !strings.Contains(stdout, `"right_path":"alpha.md"`) {
+	if !strings.Contains(stdout, fmt.Sprintf(`"right_path":%q`, filepath.Join(notes, "alpha.md"))) {
 		t.Fatalf("rem stdout = %q, want stable right path", stdout)
 	}
 }
@@ -55,7 +56,8 @@ func TestREMReportsMemoryCandidates(t *testing.T) {
 func TestREMUsesTOMLConfig(t *testing.T) {
 	t.Parallel()
 
-	memoryPath := filepath.Join(t.TempDir(), "memory.db")
+	notes := tempDir(t)
+	memoryPath := filepath.Join(notes, ".anna.db")
 	store := fs.IndexStore{}
 	if err := store.Save(t.Context(), memoryPath, &core.Index{Version: core.IndexVersion, Documents: []core.Document{
 		{
@@ -71,14 +73,14 @@ func TestREMUsesTOMLConfig(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("save fixture memory: %v", err)
 	}
-	configPath := filepath.Join(t.TempDir(), "anna.toml")
-	writeFile(t, configPath, fmt.Sprintf(`memory = %q
+	configPath := filepath.Join(tempDir(t), "anna.toml")
+	writeFile(t, configPath, fmt.Sprintf(`notes = [%q]
 json = true
 
 [rem]
 focus = "echo"
 threshold = 1.0
-`, memoryPath))
+`, notes))
 
 	cmd := NewRootCommand(testDependencies(Dependencies{IndexStore: store}))
 	var stdout bytes.Buffer
@@ -129,13 +131,15 @@ func TestREMReadsOnlyMemory(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"rem", "--memory", "memory.db", "--focus", "echo"})
+	notes := tempDir(t)
+	writeFile(t, filepath.Join(notes, ".anna.db"), "")
+	cmd.SetArgs([]string{"rem", "--in", notes, "--focus", "echo"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("rem command failed: %v\nstderr: %s", err, stderr.String())
 	}
-	if store.loadedPath != "memory.db" {
-		t.Fatalf("loaded path = %q, want memory.db", store.loadedPath)
+	if want := filepath.Join(notes, ".anna.db"); store.loadedPath != want {
+		t.Fatalf("loaded path = %q, want %s", store.loadedPath, want)
 	}
 	if store.saved {
 		t.Fatal("rem saved memory; want read-only behavior")
@@ -145,8 +149,35 @@ func TestREMReadsOnlyMemory(t *testing.T) {
 func TestREMRejectsUnsupportedFocus(t *testing.T) {
 	t.Parallel()
 
-	_, _, err := executeCommand("rem", "--memory", "memory.db", "--focus", "cluster")
+	notes := tempDir(t)
+	saveMemory(t, filepath.Join(notes, ".anna.db"), core.Document{Path: "a.md", Content: "a"})
+
+	_, _, err := executeCommand("rem", "--in", notes, "--focus", "cluster")
 	if err == nil || !strings.Contains(err.Error(), `unsupported rem focus "cluster"`) {
 		t.Fatalf("rem focus error = %v, want unsupported focus", err)
+	}
+}
+
+func TestREMWithSeveralConfiguredNotesAsksForOneDirectoryWithIn(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(tempDir(t), "anna.toml")
+	writeFile(t, configPath, fmt.Sprintf("notes = [%q, %q]\n", tempDir(t), tempDir(t)))
+
+	_, _, err := executeCommand("--config", configPath, "rem")
+	if err == nil || !strings.Contains(err.Error(), "--in") {
+		t.Fatalf("rem error = %v, want guidance to pass --in", err)
+	}
+}
+
+func TestREMHelpDescribesInAsOneNotesDirectory(t *testing.T) {
+	t.Parallel()
+
+	stdout, _, err := executeCommand("rem", "--help")
+	if err != nil {
+		t.Fatalf("rem help failed: %v", err)
+	}
+	if !strings.Contains(stdout, "--in string") || strings.Contains(stdout, "repeat") {
+		t.Fatalf("rem help = %q, want a single-value --in flag", stdout)
 	}
 }

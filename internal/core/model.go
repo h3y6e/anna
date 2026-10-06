@@ -6,7 +6,6 @@ const IndexVersion = 5
 
 type Index struct {
 	Version        int        `json:"version"`
-	Source         string     `json:"source"`
 	EmbeddingModel string     `json:"embedding_model,omitempty"`
 	DocumentCount  int        `json:"document_count,omitempty"`
 	GeneratedAt    time.Time  `json:"generated_at"`
@@ -25,7 +24,6 @@ func (i *Index) Count() int {
 
 type IndexManifest struct {
 	Version        int
-	Source         string
 	EmbeddingModel string
 	DocumentCount  int
 	GeneratedAt    time.Time
