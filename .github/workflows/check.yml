@@ -20,6 +20,6 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-check-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.lock') }}
-          restore-keys: go-check-${{ runner.os }}-
+          key: go-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.lock') }}
+          restore-keys: go-check-${{ runner.os }}-${{ runner.arch }}-
       - run: mise run check
