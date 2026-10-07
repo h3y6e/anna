@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
 	"testing"
@@ -12,7 +14,6 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:   IndexVersion,
 		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
@@ -27,7 +28,6 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:       IndexVersion,
 		Embedding:     EmbeddingProfile{Model: "model"},
 		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
@@ -65,7 +65,6 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:   IndexVersion,
 		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
@@ -80,7 +79,6 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:       IndexVersion,
 		Embedding:     EmbeddingProfile{Model: "model"},
 		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
@@ -138,7 +136,6 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 
 	content := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:   IndexVersion,
 		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
@@ -288,7 +285,6 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 
 	unchangedContent := "# Keep\n\nsame body"
 	store := &capturingIndexStore{index: &Index{
-		Version:   IndexVersion,
 		Embedding: EmbeddingProfile{Model: "model"},
 		Documents: []Document{
 			{
@@ -303,7 +299,6 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 		},
 	}}
 	store.manifest = &IndexManifest{
-		Version:       IndexVersion,
 		Embedding:     EmbeddingProfile{Model: "model"},
 		DocumentCount: 1,
 		Documents: map[string]DocumentManifest{
@@ -339,7 +334,6 @@ func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T
 	content := "# Keep\n\nsame body"
 	previous := EmbeddingProfile{Model: "model", QueryPrefix: "query: ", DocumentPrefix: "old: "}
 	store := &capturingIndexStore{index: &Index{
-		Version:   IndexVersion,
 		Embedding: previous,
 		Documents: []Document{{
 			Path:        "keep.md",
@@ -351,7 +345,6 @@ func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T
 		}},
 	}}
 	store.manifest = &IndexManifest{
-		Version:       IndexVersion,
 		Embedding:     previous,
 		DocumentCount: 1,
 		Documents:     map[string]DocumentManifest{"keep.md": {ContentHash: contentHash(content)}},
@@ -373,5 +366,43 @@ func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T
 	}
 	if store.saved == nil || store.saved.Embedding != current {
 		t.Fatalf("saved index = %+v, want embedding profile %+v", store.saved, current)
+	}
+}
+
+func TestIndexerBuildAndSaveRebuildsWhenTheMemoryIsMissingOrFromAnotherVersion(t *testing.T) {
+	t.Parallel()
+
+	for name, manifestErr := range map[string]error{
+		"missing":          fmt.Errorf("open index: %w", fs.ErrNotExist),
+		"version mismatch": fmt.Errorf("index version 4, want 5: %w", ErrIndexVersionMismatch),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := &capturingIndexStore{manifestErr: manifestErr}
+			_, err := NewIndexer(stubTextSource{}, store, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
+				BuildAndSave(t.Context(), "notes", "memory.db", false)
+			if err != nil {
+				t.Fatalf("BuildAndSave error = %v", err)
+			}
+			if store.saved == nil {
+				t.Fatal("Save was not called for a fresh build")
+			}
+		})
+	}
+}
+
+func TestIndexerBuildAndSaveReturnsOtherManifestErrorsWithoutOverwritingTheMemory(t *testing.T) {
+	t.Parallel()
+
+	corrupt := errors.New("decode index document count")
+	store := &capturingIndexStore{manifestErr: corrupt}
+	_, err := NewIndexer(stubTextSource{}, store, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
+		BuildAndSave(t.Context(), "notes", "memory.db", false)
+	if !errors.Is(err, corrupt) {
+		t.Fatalf("BuildAndSave error = %v, want %v", err, corrupt)
+	}
+	if store.saved != nil {
+		t.Fatal("Save was called despite an unreadable memory")
 	}
 }

@@ -225,7 +225,7 @@ func TestSearcherRejectsIndexBuiltWithDifferentPrefixes(t *testing.T) {
 	_, err := searcher.SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
 
 	// Assert
-	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "" and document prefix ""`) {
+	if err == nil || !strings.Contains(err.Error(), `--embedder-query-prefix "" --embedder-document-prefix ""`) {
 		t.Fatalf("SearchFiles error = %v, want prefix mismatch", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"slices"
 	"strings"
 	"sync"
@@ -38,7 +39,6 @@ func NewIndexer(source TextSource, store IndexStore, embedder Embedder, tokenize
 }
 
 func (i *Indexer) WithEmbedding(embedding EmbeddingProfile) *Indexer {
-	embedding.Model = strings.TrimSpace(embedding.Model)
 	i.embedding = embedding
 	return i
 }
@@ -92,21 +92,22 @@ func (i *Indexer) buildIncremental(ctx context.Context, source string, indexPath
 	}
 	hashes := contentHashes(files)
 	manifest, err := i.store.LoadManifest(ctx, indexPath)
-	if err == nil && i.canReuseManifest(manifest) && manifestMatchesFiles(manifest, files, hashes) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrIndexVersionMismatch) {
+		return i.rebuild(ctx, files, hashes, indexPath)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Embedding != i.embedding {
+		return i.rebuild(ctx, files, hashes, indexPath)
+	}
+	if manifestMatchesFiles(manifest, files, hashes) {
 		return i.newIndexSummary(manifest.DocumentCount, manifest.GeneratedAt), nil
 	}
 
 	existing, err := i.store.Load(ctx, indexPath)
-	if err != nil || !i.canReuseExistingIndex(existing) {
-		docs, err := i.buildDocuments(ctx, files, nil, hashes)
-		if err != nil {
-			return nil, err
-		}
-		index := i.newIndex(docs)
-		if err := i.store.Save(ctx, indexPath, index); err != nil {
-			return nil, err
-		}
-		return index, nil
+	if err != nil {
+		return nil, err
 	}
 
 	previous := make(map[string]Document, len(existing.Documents))
@@ -127,16 +128,16 @@ func (i *Indexer) buildIncremental(ctx context.Context, source string, indexPath
 	return index, nil
 }
 
-func (i *Indexer) canReuseExistingIndex(index *Index) bool {
-	return index != nil &&
-		index.Version == IndexVersion &&
-		index.Embedding == i.embedding
-}
-
-func (i *Indexer) canReuseManifest(manifest *IndexManifest) bool {
-	return manifest != nil &&
-		manifest.Version == IndexVersion &&
-		manifest.Embedding == i.embedding
+func (i *Indexer) rebuild(ctx context.Context, files []TextFile, hashes map[string]string, indexPath string) (*Index, error) {
+	docs, err := i.buildDocuments(ctx, files, nil, hashes)
+	if err != nil {
+		return nil, err
+	}
+	index := i.newIndex(docs)
+	if err := i.store.Save(ctx, indexPath, index); err != nil {
+		return nil, err
+	}
+	return index, nil
 }
 
 func (i *Indexer) readTextFiles(ctx context.Context, source string) ([]TextFile, error) {
@@ -321,7 +322,6 @@ func averageEmbeddings(a []float64, b []float64) []float64 {
 
 func (i *Indexer) newIndex(docs []Document) *Index {
 	return &Index{
-		Version:       IndexVersion,
 		Embedding:     i.embedding,
 		DocumentCount: len(docs),
 		GeneratedAt:   time.Now().UTC(),
@@ -331,7 +331,6 @@ func (i *Indexer) newIndex(docs []Document) *Index {
 
 func (i *Indexer) newIndexSummary(documentCount int, generatedAt time.Time) *Index {
 	return &Index{
-		Version:       IndexVersion,
 		Embedding:     i.embedding,
 		DocumentCount: documentCount,
 		GeneratedAt:   generatedAt,

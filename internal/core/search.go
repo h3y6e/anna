@@ -55,7 +55,6 @@ func NewSearcher(store IndexStore, embedder Embedder, tokenizer Tokenizer) *Sear
 }
 
 func (s *Searcher) WithEmbedding(embedding EmbeddingProfile) *Searcher {
-	embedding.Model = strings.TrimSpace(embedding.Model)
 	s.embedding = embedding
 	return s
 }
@@ -112,23 +111,15 @@ func resolveDocumentPath(indexPath string, documentPath string) string {
 }
 
 func validateSearchEmbedding(recorded EmbeddingProfile, configured EmbeddingProfile) error {
-	if recorded.Model != "" && configured.Model != "" && recorded.Model != configured.Model {
-		return fmt.Errorf(
-			"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
-			recorded.Model,
-			recorded.Model,
-		)
+	if recorded == configured {
+		return nil
 	}
-	if recorded.QueryPrefix != configured.QueryPrefix || recorded.DocumentPrefix != configured.DocumentPrefix {
-		return fmt.Errorf(
-			"index was built with query prefix %q and document prefix %q; search with --embedder-query-prefix %q --embedder-document-prefix %q or rebuild index",
-			recorded.QueryPrefix,
-			recorded.DocumentPrefix,
-			recorded.QueryPrefix,
-			recorded.DocumentPrefix,
-		)
-	}
-	return nil
+	return fmt.Errorf(
+		"index was built with --embedder-model %q --embedder-query-prefix %q --embedder-document-prefix %q; search with the same settings or rebuild the index",
+		recorded.Model,
+		recorded.QueryPrefix,
+		recorded.DocumentPrefix,
+	)
 }
 
 func validateSearchEmbeddings(docs []Document, queryEmbedding []float64) error {

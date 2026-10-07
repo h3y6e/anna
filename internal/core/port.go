@@ -5,7 +5,10 @@ import (
 	"errors"
 )
 
-var ErrEmbedTextTooLarge = errors.New("embedding input exceeds the model's context length")
+var (
+	ErrEmbedTextTooLarge    = errors.New("embedding input exceeds the model's context length")
+	ErrIndexVersionMismatch = errors.New("index version does not match this build")
+)
 
 type TextSource interface {
 	ReadTextFiles(ctx context.Context, source string) ([]TextFile, error)

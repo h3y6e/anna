@@ -91,7 +91,7 @@ func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 	t.Parallel()
 
 	notes := tempDir(t)
-	saveMemory(t, filepath.Join(notes, ".anna.db"), core.Document{
+	saveMemory(t, filepath.Join(notes, ".anna.db"), "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", core.Document{
 		Path:      "note.md",
 		Terms:     map[string]int{"query": 1},
 		Length:    1,
@@ -195,7 +195,7 @@ func TestRecallFailsWhenPrefixesDifferFromThoseTheMemoryWasBuiltWith(t *testing.
 	_, _, err := executeCommandWithDependencies(deps, "recall", "--in", notes, "note")
 
 	// Assert
-	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "query: "`) {
+	if err == nil || !strings.Contains(err.Error(), `--embedder-query-prefix "query: "`) {
 		t.Fatalf("recall error = %v, want prefix mismatch", err)
 	}
 }

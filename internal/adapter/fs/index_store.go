@@ -122,7 +122,7 @@ func saveIndexToDB(ctx context.Context, db *bolt.DB, index *core.Index) error {
 			return fmt.Errorf("create index embeddings bucket: %w", err)
 		}
 
-		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(index.Version))); err != nil {
+		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(core.IndexVersion))); err != nil {
 			return fmt.Errorf("write index version: %w", err)
 		}
 		if err := putEmbeddingProfile(meta, index.Embedding); err != nil {
@@ -208,7 +208,6 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 		if bucket == nil {
 			return fmt.Errorf("index manifest bucket is missing")
 		}
-		manifest.Version = core.IndexVersion
 		manifest.Embedding = meta.embedding
 		manifest.DocumentCount = meta.documentCount
 		manifest.GeneratedAt = meta.generatedAt
@@ -322,7 +321,7 @@ func readMeta(tx *bolt.Tx) (indexMeta, error) {
 		return indexMeta{}, fmt.Errorf("decode index version: %w", err)
 	}
 	if version != core.IndexVersion {
-		return indexMeta{}, fmt.Errorf("unsupported index version %d", version)
+		return indexMeta{}, fmt.Errorf("index version %d, want %d: %w", version, core.IndexVersion, core.ErrIndexVersionMismatch)
 	}
 	documentCount, err := strconv.Atoi(string(meta.Get(indexDocumentCountKey)))
 	if err != nil {
@@ -403,7 +402,6 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 			return fmt.Errorf("index embeddings bucket is missing")
 		}
 
-		index.Version = core.IndexVersion
 		index.Embedding = meta.embedding
 		index.DocumentCount = meta.documentCount
 		index.GeneratedAt = meta.generatedAt

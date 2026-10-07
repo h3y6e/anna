@@ -45,9 +45,10 @@ func (stubIndexStore) Save(context.Context, string, *Index) error {
 }
 
 type capturingIndexStore struct {
-	index    *Index
-	manifest *IndexManifest
-	saved    *Index
+	index       *Index
+	manifest    *IndexManifest
+	manifestErr error
+	saved       *Index
 
 	loadCalls int
 }
@@ -61,6 +62,9 @@ func (s *capturingIndexStore) Load(context.Context, string) (*Index, error) {
 }
 
 func (s *capturingIndexStore) LoadManifest(context.Context, string) (*IndexManifest, error) {
+	if s.manifestErr != nil {
+		return nil, s.manifestErr
+	}
 	if s.manifest != nil {
 		return s.manifest, nil
 	}

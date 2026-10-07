@@ -11,7 +11,6 @@ type EmbeddingProfile struct {
 }
 
 type Index struct {
-	Version       int
 	Embedding     EmbeddingProfile
 	DocumentCount int
 	GeneratedAt   time.Time
@@ -19,7 +18,6 @@ type Index struct {
 }
 
 type IndexManifest struct {
-	Version       int
 	Embedding     EmbeddingProfile
 	DocumentCount int
 	GeneratedAt   time.Time

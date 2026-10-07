@@ -15,7 +15,7 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	t.Parallel()
 
 	notes := tempDir(t)
-	saveMemory(t, filepath.Join(notes, ".anna.db"), core.Document{
+	saveMemory(t, filepath.Join(notes, ".anna.db"), "qwen3-embedding", core.Document{
 		Path:      "note.md",
 		Terms:     map[string]int{"query": 1},
 		Length:    1,
@@ -45,7 +45,7 @@ func TestRecallSearchesConfiguredNotesDirectories(t *testing.T) {
 	t.Parallel()
 
 	notes := tempDir(t)
-	saveMemory(t, filepath.Join(notes, ".anna.db"),
+	saveMemory(t, filepath.Join(notes, ".anna.db"), "",
 		core.Document{Path: "lexical.md", Content: "exact keyword match", Terms: map[string]int{"keyword": 1}, Length: 1},
 		core.Document{Path: "other.md", Content: "different note", Terms: map[string]int{"different": 1}, Length: 1},
 	)
@@ -74,7 +74,7 @@ func TestRecallInFlagOverridesConfiguredNotes(t *testing.T) {
 	t.Parallel()
 
 	notes := tempDir(t)
-	saveMemory(t, filepath.Join(notes, ".anna.db"),
+	saveMemory(t, filepath.Join(notes, ".anna.db"), "",
 		core.Document{Path: "lexical.md", Content: "exact keyword match", Terms: map[string]int{"keyword": 1}, Length: 1},
 	)
 	configPath := filepath.Join(tempDir(t), "anna.toml")
@@ -102,7 +102,7 @@ func TestRecallSearchesSeveralDirectoriesAsOneCorpus(t *testing.T) {
 	work := filepath.Join(tempDir(t), "work")
 	home := filepath.Join(tempDir(t), "home")
 	for _, dir := range []string{work, home} {
-		saveMemory(t, filepath.Join(dir, ".anna.db"),
+		saveMemory(t, filepath.Join(dir, ".anna.db"), "",
 			core.Document{Path: "todo.md", Content: "todo list", Terms: map[string]int{"todo": 1}, Length: 1},
 		)
 	}
@@ -157,7 +157,7 @@ func TestRecallReadsTheMemoryFileNamedByMemory(t *testing.T) {
 	t.Parallel()
 
 	notes := tempDir(t)
-	saveMemory(t, filepath.Join(notes, "memory.local.db"),
+	saveMemory(t, filepath.Join(notes, "memory.local.db"), "",
 		core.Document{Path: "note.md", Content: "keyword", Terms: map[string]int{"keyword": 1}, Length: 1},
 	)
 
@@ -198,7 +198,7 @@ func TestRecallUsesCWDConfig(t *testing.T) {
 	cwd := tempDir(t)
 	t.Chdir(cwd)
 
-	saveMemory(t, filepath.Join(cwd, ".anna.db"),
+	saveMemory(t, filepath.Join(cwd, ".anna.db"), "",
 		core.Document{Path: "note.md", Content: "exact keyword match", Terms: map[string]int{"keyword": 1}, Length: 1},
 	)
 	writeFile(t, filepath.Join(cwd, "anna.toml"), "notes = [\".\"]\njson = true\n\n[recall]\nmode = \"bm25\"\n")
@@ -212,12 +212,12 @@ func TestRecallUsesCWDConfig(t *testing.T) {
 	}
 }
 
-func saveMemory(t *testing.T, path string, docs ...core.Document) {
+func saveMemory(t *testing.T, path string, model string, docs ...core.Document) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := (fs.IndexStore{}).Save(t.Context(), path, &core.Index{Version: core.IndexVersion, Documents: docs}); err != nil {
+	if err := (fs.IndexStore{}).Save(t.Context(), path, &core.Index{Embedding: core.EmbeddingProfile{Model: model}, Documents: docs}); err != nil {
 		t.Fatalf("save fixture memory: %v", err)
 	}
 }
@@ -241,7 +241,7 @@ func TestRecallSplitsNotesFromTheEnvironmentOnThePathListSeparator(t *testing.T)
 	work := filepath.Join(tempDir(t), "work")
 	home := filepath.Join(tempDir(t), "home")
 	for _, dir := range []string{work, home} {
-		saveMemory(t, filepath.Join(dir, ".anna.db"),
+		saveMemory(t, filepath.Join(dir, ".anna.db"), "",
 			core.Document{Path: "todo.md", Content: "todo list", Terms: map[string]int{"todo": 1}, Length: 1},
 		)
 	}
@@ -262,7 +262,7 @@ func TestRecallResolvesRelativeNotesInAConfigFileAgainstTheConfigFileDirectory(t
 	t.Parallel()
 
 	base := tempDir(t)
-	saveMemory(t, filepath.Join(base, "notes", ".anna.db"),
+	saveMemory(t, filepath.Join(base, "notes", ".anna.db"), "",
 		core.Document{Path: "todo.md", Content: "todo list", Terms: map[string]int{"todo": 1}, Length: 1},
 	)
 	configPath := filepath.Join(base, "anna.toml")
