@@ -21,29 +21,6 @@ type Dependencies struct {
 	ConfigSearchPaths []string
 }
 
-// EmbedderSettings selects an OpenAI-compatible /v1/embeddings backend.
-type EmbedderSettings struct {
-	BaseURL        string
-	Model          string
-	APIKey         string
-	QueryPrefix    string
-	DocumentPrefix string
-}
-
-func resolveEmbedderSettings(cfg *viper.Viper) EmbedderSettings {
-	return EmbedderSettings{
-		BaseURL:        cfg.GetString("embedder.url"),
-		Model:          cfg.GetString("embedder.model"),
-		APIKey:         cfg.GetString("embedder.api-key"),
-		QueryPrefix:    cfg.GetString("embedder.query-prefix"),
-		DocumentPrefix: cfg.GetString("embedder.document-prefix"),
-	}
-}
-
-func (s EmbedderSettings) profile() core.EmbeddingProfile {
-	return core.EmbeddingProfile{Model: s.Model, QueryPrefix: s.QueryPrefix, DocumentPrefix: s.DocumentPrefix}
-}
-
 func NewRootCommand(version string, deps Dependencies) *cobra.Command {
 	cfg := viper.New()
 	cfg.SetEnvPrefix("anna")
