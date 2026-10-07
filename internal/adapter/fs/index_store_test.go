@@ -14,9 +14,10 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
-func TestIndexStoreSaveAndLoad(t *testing.T) {
+func TestWhenAnIndexIsSavedLoadingItReturnsTheSameDocumentsFromAPrivateBboltFile(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
@@ -34,6 +35,7 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 		},
 	}
 
+	// Act
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
@@ -41,6 +43,8 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load error = %v", err)
 	}
+
+	// Assert
 	if got := loaded.Documents[0].Path; got != "note.md" {
 		t.Fatalf("loaded document path = %q, want note.md", got)
 	}
@@ -93,9 +97,10 @@ func TestIndexStoreSaveAndLoad(t *testing.T) {
 	}
 }
 
-func TestIndexStoreLoadManifest(t *testing.T) {
+func TestWhenAnIndexIsSavedLoadingTheManifestReturnsItsCountHashesAndModel(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
@@ -113,6 +118,7 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 		},
 	}
 
+	// Act
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
@@ -120,6 +126,8 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest error = %v", err)
 	}
+
+	// Assert
 	if got := manifest.DocumentCount; got != 1 {
 		t.Fatalf("manifest document count = %d, want 1", got)
 	}
@@ -131,9 +139,10 @@ func TestIndexStoreLoadManifest(t *testing.T) {
 	}
 }
 
-func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
+func TestWhenAMemoryIsSavedSearchingItReturnsTheMatchingNoteJoinedToTheMemoryDirectory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
@@ -160,6 +169,8 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
+
+	// Act
 	results, err := searchMemories(
 		t.Context(),
 		[]string{path},
@@ -170,6 +181,8 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 		core.EmbeddingProfile{},
 		core.SearchModeHybrid,
 	)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
@@ -178,9 +191,10 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	}
 }
 
-func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
+func TestWhenSearchingInBM25ModeTheEmbedderAndEmbeddingModelAreNotNeeded(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
@@ -198,6 +212,8 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
+
+	// Act
 	results, err := searchMemories(
 		t.Context(),
 		[]string{path},
@@ -208,6 +224,8 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 		core.EmbeddingProfile{Model: "different-model"},
 		core.SearchModeBM25,
 	)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
@@ -216,9 +234,10 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	}
 }
 
-func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing.T) {
+func TestWhenTheConfiguredModelDiffersFromTheMemorySearchingFailsBeforeEmbeddingTheQuery(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	store := IndexStore{}
 	index := &core.Index{
@@ -237,6 +256,8 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
+
+	// Act
 	_, err := searchMemories(
 		t.Context(),
 		[]string{path},
@@ -247,14 +268,17 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 		core.EmbeddingProfile{Model: "model-b"},
 		core.SearchModeHybrid,
 	)
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), `index was built with --embedder-model "model-a"`) {
 		t.Fatalf("Search error = %v, want embedding model mismatch", err)
 	}
 }
 
-func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.T) {
+func TestWhenSeveralMemoriesHoldSameNamedNotesSearchingReturnsEachNoteUnderItsOwnDirectory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	store := IndexStore{}
 	work := filepath.Join(t.TempDir(), "work")
 	home := filepath.Join(t.TempDir(), "home")
@@ -268,6 +292,7 @@ func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.
 		})
 	}
 
+	// Act
 	results, err := searchMemories(
 		t.Context(),
 		[]string{filepath.Join(work, ".anna.db"), filepath.Join(home, ".anna.db")},
@@ -278,6 +303,8 @@ func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.
 		core.EmbeddingProfile{},
 		core.SearchModeRRF,
 	)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("Search error = %v", err)
 	}
@@ -293,9 +320,10 @@ func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.
 	}
 }
 
-func TestIndexStoreSearchOverSeveralMemoriesScoresTermsAgainstTheCombinedCorpus(t *testing.T) {
+func TestWhenSeveralMemoriesAreSearchedTogetherTermsAreScoredAgainstTheCombinedCorpus(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	store := IndexStore{}
 	common := filepath.Join(t.TempDir(), "common")
 	rare := filepath.Join(t.TempDir(), "rare")
@@ -323,17 +351,20 @@ func TestIndexStoreSearchOverSeveralMemoriesScoresTermsAgainstTheCombinedCorpus(
 		return 0
 	}
 
+	// Act
 	alone := search(filepath.Join(rare, ".anna.db"))
 	combined := search(filepath.Join(rare, ".anna.db"), filepath.Join(common, ".anna.db"))
 
+	// Assert
 	if combined >= alone {
 		t.Fatalf("d.md score with a corpus where the term is common = %v, want below %v", combined, alone)
 	}
 }
 
-func TestIndexStoreSearchRejectsMemoriesBuiltWithDifferentEmbeddingModels(t *testing.T) {
+func TestWhenMemoriesWereBuiltWithDifferentModelsSearchingThemTogetherFails(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	store := IndexStore{}
 	a := filepath.Join(t.TempDir(), "a", ".anna.db")
 	b := filepath.Join(t.TempDir(), "b", ".anna.db")
@@ -341,8 +372,10 @@ func TestIndexStoreSearchRejectsMemoriesBuiltWithDifferentEmbeddingModels(t *tes
 	saveMemory(t, store, a, "model-a", doc)
 	saveMemory(t, store, b, "model-b", doc)
 
+	// Act
 	_, err := searchMemories(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, core.EmbeddingProfile{Model: "model-a"}, core.SearchModeHybrid)
 
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), `index was built with --embedder-model "model-b"`) {
 		t.Fatalf("Search error = %v, want embedding model mismatch", err)
 	}
@@ -405,7 +438,7 @@ func (t fixedTokenizer) Tokenize(string) []string {
 	return t.tokens
 }
 
-func TestIndexStoreSaveRecordsEmbeddingPrefixesForLoadAndLoadManifest(t *testing.T) {
+func TestWhenAnIndexIsSavedWithPrefixesLoadingAndLoadingTheManifestReturnThem(t *testing.T) {
 	t.Parallel()
 
 	// Arrange
@@ -435,7 +468,7 @@ func TestIndexStoreSaveRecordsEmbeddingPrefixesForLoadAndLoadManifest(t *testing
 	}
 }
 
-func TestIndexStoreSearchRejectsPrefixMismatchBeforeEmbedding(t *testing.T) {
+func TestWhenTheConfiguredPrefixesDifferFromTheMemorySearchingFailsBeforeEmbeddingTheQuery(t *testing.T) {
 	t.Parallel()
 
 	// Arrange
@@ -453,18 +486,22 @@ func TestIndexStoreSearchRejectsPrefixMismatchBeforeEmbedding(t *testing.T) {
 	}
 }
 
-func TestIndexStoreLoadManifestReportsAMissingMemoryAsNotExist(t *testing.T) {
+func TestWhenTheMemoryFileIsMissingLoadingTheManifestFailsWithErrNotExist(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	_, err := IndexStore{}.LoadManifest(t.Context(), filepath.Join(t.TempDir(), "memory.db"))
+
+	// Assert
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("LoadManifest error = %v, want os.ErrNotExist", err)
 	}
 }
 
-func TestIndexStoreLoadManifestReportsAMemoryFromAnotherVersionAsAVersionMismatch(t *testing.T) {
+func TestWhenTheMemoryHasAnotherIndexVersionLoadingTheManifestFailsWithErrIndexVersionMismatch(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	path := filepath.Join(t.TempDir(), "memory.db")
 	if err := (IndexStore{}).Save(t.Context(), path, &core.Index{}); err != nil {
 		t.Fatalf("Save error = %v", err)
@@ -482,7 +519,10 @@ func TestIndexStoreLoadManifestReportsAMemoryFromAnotherVersionAsAVersionMismatc
 		t.Fatalf("close index: %v", err)
 	}
 
+	// Act
 	_, err = IndexStore{}.LoadManifest(t.Context(), path)
+
+	// Assert
 	if !errors.Is(err, core.ErrIndexVersionMismatch) {
 		t.Fatalf("LoadManifest error = %v, want core.ErrIndexVersionMismatch", err)
 	}

@@ -12,14 +12,18 @@ import (
 	"github.com/h3y6e/anna/internal/core"
 )
 
-func TestNREMWritesTheMemoryInsideTheNotesDirectory(t *testing.T) {
+func TestWhenNoMemoryIsConfiguredNremWritesAnnaDbInsideTheNotesDirectory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nDefault memory path lives next to source files.\n")
 	memoryPath := filepath.Join(source, ".anna.db")
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -31,14 +35,18 @@ func TestNREMWritesTheMemoryInsideTheNotesDirectory(t *testing.T) {
 	}
 }
 
-func TestNREMWritesProgressToStderr(t *testing.T) {
+func TestWhenNremRunsItWritesPathsModelAndPerNoteProgressToStderr(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nProgress should be visible during NREM consolidation.\n")
 	memoryPath := filepath.Join(source, ".anna.db")
 
+	// Act
 	_, stderr, err := executeCommand("nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -62,13 +70,17 @@ func TestNREMWritesProgressToStderr(t *testing.T) {
 	}
 }
 
-func TestNREMQuietSuppressesStderr(t *testing.T) {
+func TestWhenQuietIsGivenNremWritesNothingToStderrButStillPrintsTheSummary(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nQuiet mode should suppress progress.\n")
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", source, "--quiet")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -80,10 +92,13 @@ func TestNREMQuietSuppressesStderr(t *testing.T) {
 	}
 }
 
-func TestNREMHelpExposesEmbeddingModelChoice(t *testing.T) {
+func TestWhenHelpIsRequestedNremListsTheEmbedderModelFlag(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", "--help")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem help failed: %v\nstderr: %s", err, stderr)
 	}
@@ -95,10 +110,13 @@ func TestNREMHelpExposesEmbeddingModelChoice(t *testing.T) {
 	}
 }
 
-func TestNREMHelpExposesAmnesiaChoice(t *testing.T) {
+func TestWhenHelpIsRequestedNremListsTheAmnesiaFlag(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", "--help")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem help failed: %v\nstderr: %s", err, stderr)
 	}
@@ -107,13 +125,17 @@ func TestNREMHelpExposesAmnesiaChoice(t *testing.T) {
 	}
 }
 
-func TestNREMOutputsJSON(t *testing.T) {
+func TestWhenJSONIsGivenNremPrintsTheSummaryAsJSON(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nJSON output should include source and memory paths.\n")
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", source, "--json")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -131,12 +153,15 @@ func TestNREMOutputsJSON(t *testing.T) {
 	}
 }
 
-func TestNREMUsesTokenizerFactory(t *testing.T) {
+func TestWhenNremRunsItCreatesTheTokenizerThroughTheFactory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var called bool
+
+	// Act
 	_, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
@@ -148,6 +173,8 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 			return fakeTokenizer{}, nil
 		},
 	}), "nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -156,12 +183,15 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 	}
 }
 
-func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
+func TestWhenTheEmbedderModelFlagIsGivenNremPassesItToTheEmbedder(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var capturedModel string
+
+	// Act
 	_, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
@@ -173,6 +203,8 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 			return fakeTokenizer{}, nil
 		},
 	}), "nrem", source, "--embedder-model", "qwen3-embedding")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -181,9 +213,10 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 	}
 }
 
-func TestNREMUsesTOMLConfig(t *testing.T) {
+func TestWhenAConfigFileIsGivenNremUsesItsMemoryNameAndEmbedderSettings(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "keep.md"), "# Keep\n\nvisible note\n")
 	if err := os.Mkdir(filepath.Join(source, "skip"), 0o700); err != nil {
@@ -203,6 +236,8 @@ amnesia = false
 
 	var capturedBaseURL string
 	var capturedModel string
+
+	// Act
 	stdout, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
@@ -215,6 +250,8 @@ amnesia = false
 			return fakeTokenizer{}, nil
 		},
 	}), "--config", configPath, "nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -232,7 +269,8 @@ amnesia = false
 	}
 }
 
-func TestNREMUsesXDGConfigFile(t *testing.T) {
+func TestWhenAConfigExistsUnderXDGConfigHomeNremUsesIt(t *testing.T) {
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nDefault config path should be loaded.\n")
 	memoryPath := filepath.Join(source, "xdg-memory.db")
@@ -246,7 +284,10 @@ func TestNREMUsesXDGConfigFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", xdgConfigHome)
 	t.Setenv("HOME", home)
 
+	// Act
 	stdout, stderr, err := executeCommandWithDependencies(defaultTestDependencies(), "nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -258,7 +299,8 @@ func TestNREMUsesXDGConfigFile(t *testing.T) {
 	}
 }
 
-func TestNREMUsesHomeConfigFile(t *testing.T) {
+func TestWhenAConfigExistsUnderTheHomeConfigDirectoryNremUsesIt(t *testing.T) {
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nHome config path should be loaded.\n")
 	memoryPath := filepath.Join(source, "home-memory.db")
@@ -271,7 +313,10 @@ func TestNREMUsesHomeConfigFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", home)
 
+	// Act
 	stdout, stderr, err := executeCommandWithDependencies(defaultTestDependencies(), "nrem", source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -283,16 +328,20 @@ func TestNREMUsesHomeConfigFile(t *testing.T) {
 	}
 }
 
-func TestNREMIndexesEachDirectoryIntoItsOwnMemory(t *testing.T) {
+func TestWhenSeveralDirectoriesAreGivenNremWritesEachIntoItsOwnMemory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	work := tempDir(t)
 	home := tempDir(t)
 	writeFile(t, filepath.Join(work, "a.md"), "# A\n")
 	writeFile(t, filepath.Join(home, "b.md"), "# B\n")
 	writeFile(t, filepath.Join(home, "c.md"), "# C\n")
 
+	// Act
 	stdout, stderr, err := executeCommand("nrem", work, home)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -307,31 +356,40 @@ func TestNREMIndexesEachDirectoryIntoItsOwnMemory(t *testing.T) {
 	}
 }
 
-func TestNREMDoesNotIndexItsOwnMemoryFile(t *testing.T) {
+func TestWhenNremRunsAgainItDoesNotIndexItsOwnMemoryFile(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n")
 
-	for range 2 {
-		stdout, stderr, err := executeCommand("nrem", source, "--memory", "memory.md")
-		if err != nil {
-			t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
-		}
-		if !strings.Contains(stdout, "consolidated 1 documents") {
-			t.Fatalf("nrem stdout = %q, want only note.md consolidated", stdout)
-		}
+	if _, stderr, err := executeCommand("nrem", source, "--memory", "memory.md"); err != nil {
+		t.Fatalf("first nrem command failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Act
+	stdout, stderr, err := executeCommand("nrem", source, "--memory", "memory.md")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "consolidated 1 documents") {
+		t.Fatalf("nrem stdout = %q, want only note.md consolidated", stdout)
 	}
 }
 
-func TestMemoryMustBeAPlainFileName(t *testing.T) {
+func TestWhenTheMemoryIsNotAPlainFileNameNremFailsWithAFileNameError(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{"", ".", "..", "../elsewhere.db", "sub/anna.db", "/abs/memory.db"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			// Act
 			_, _, err := executeCommand("nrem", tempDir(t), "--memory", name)
+
+			// Assert
 			if err == nil || !strings.Contains(err.Error(), "file name inside each notes directory") {
 				t.Fatalf("nrem --memory %q error = %v, want a file-name error", name, err)
 			}
@@ -339,9 +397,10 @@ func TestMemoryMustBeAPlainFileName(t *testing.T) {
 	}
 }
 
-func TestNREMRejectsNestedDirectoriesBeforeWritingAnyMemory(t *testing.T) {
+func TestWhenTheDirectoriesAreNestedNremFailsBeforeWritingAnyMemory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	vault := tempDir(t)
 	task := filepath.Join(vault, "task")
 	if err := os.Mkdir(task, 0o700); err != nil {
@@ -349,7 +408,10 @@ func TestNREMRejectsNestedDirectoriesBeforeWritingAnyMemory(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(task, "note.md"), "# Note\n")
 
+	// Act
 	_, _, err := executeCommand("nrem", vault, task)
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Fatalf("nrem error = %v, want overlapping directories error", err)
 	}
@@ -360,27 +422,35 @@ func TestNREMRejectsNestedDirectoriesBeforeWritingAnyMemory(t *testing.T) {
 	}
 }
 
-func TestNREMRejectsTheSameDirectoryGivenTwice(t *testing.T) {
+func TestWhenTheSameDirectoryIsGivenTwiceNremFailsWithAnOverlapError(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	notes := tempDir(t)
 	writeFile(t, filepath.Join(notes, "note.md"), "# Note\n")
 
+	// Act
 	_, _, err := executeCommand("nrem", notes, notes)
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), "overlap") {
 		t.Fatalf("nrem error = %v, want overlapping directories error", err)
 	}
 }
 
-func TestNREMWithoutArgumentsBuildsTheConfiguredNotes(t *testing.T) {
+func TestWhenNoDirectoryIsGivenNremBuildsTheConfiguredNotes(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	notes := tempDir(t)
 	writeFile(t, filepath.Join(notes, "note.md"), "# Note\n")
 	configPath := filepath.Join(tempDir(t), "anna.toml")
 	writeFile(t, configPath, fmt.Sprintf("notes = [%q]\n", notes))
 
+	// Act
 	_, stderr, err := executeCommand("--config", configPath, "nrem")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -389,18 +459,22 @@ func TestNREMWithoutArgumentsBuildsTheConfiguredNotes(t *testing.T) {
 	}
 }
 
-func TestNREMWithoutArgumentsOrConfiguredNotesExplainsHowToChooseThem(t *testing.T) {
+func TestWhenNoDirectoryIsGivenOrConfiguredNremFailsWithGuidanceAboutNotes(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	_, _, err := executeCommand("nrem")
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), "notes") {
 		t.Fatalf("nrem error = %v, want guidance about notes directories", err)
 	}
 }
 
-func TestNREMIndexesAFileNamedLikeTheMemoryInASubdirectory(t *testing.T) {
+func TestWhenASubdirectoryHasAFileNamedLikeTheMemoryNremIndexesIt(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n")
 	if err := os.Mkdir(filepath.Join(source, "sub"), 0o700); err != nil {
@@ -408,13 +482,18 @@ func TestNREMIndexesAFileNamedLikeTheMemoryInASubdirectory(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(source, "sub", "memory.md"), "# Sub\n")
 
-	for range 2 {
-		stdout, stderr, err := executeCommand("nrem", source, "--memory", "memory.md")
-		if err != nil {
-			t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
-		}
-		if !strings.Contains(stdout, "consolidated 2 documents") {
-			t.Fatalf("nrem stdout = %q, want note.md and sub/memory.md consolidated", stdout)
-		}
+	if _, stderr, err := executeCommand("nrem", source, "--memory", "memory.md"); err != nil {
+		t.Fatalf("first nrem command failed: %v\nstderr: %s", err, stderr)
+	}
+
+	// Act
+	stdout, stderr, err := executeCommand("nrem", source, "--memory", "memory.md")
+
+	// Assert
+	if err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "consolidated 2 documents") {
+		t.Fatalf("nrem stdout = %q, want note.md and sub/memory.md consolidated", stdout)
 	}
 }

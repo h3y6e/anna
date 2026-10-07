@@ -8,22 +8,30 @@ import (
 	"testing"
 )
 
-func TestSearcherRejectsIndexWithoutEmbeddings(t *testing.T) {
+func TestWhenAMemoryHasNoEmbeddingsAHybridSearchFailsWithAMissingEmbeddingError(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	_, err := NewSearcher(stubIndexStore{index: &Index{Documents: []Document{{Path: "note.md"}}}}, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
 		SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), "has no embedding") {
 		t.Fatalf("SearchFiles error = %v, want missing embedding error", err)
 	}
 }
 
-func TestSearcherSearchFilesJoinsEachMemoryDirectoryToItsDocumentPaths(t *testing.T) {
+func TestWhenSearchingSeveralMemoriesEachResultPathIsJoinedToItsMemoryDirectory(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	store := stubIndexStore{index: &Index{Documents: []Document{{Path: "todo.md", Content: "todo", Terms: map[string]int{"todo": 1}, Length: 1}}}}
+
+	// Act
 	results, err := NewSearcher(store, nil, fixedTokenizer{}).
 		SearchFiles(t.Context(), []string{filepath.Join("work", ".anna.db"), filepath.Join("home", ".anna.db")}, "todo", 10, SearchModeBM25)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("SearchFiles error = %v", err)
 	}
@@ -37,16 +45,20 @@ func TestSearcherSearchFilesJoinsEachMemoryDirectoryToItsDocumentPaths(t *testin
 	}
 }
 
-func TestSearchUsesQueryEmbedding(t *testing.T) {
+func TestWhenNoTermMatchesAHybridSearchRanksNotesByQueryEmbedding(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index := &Index{Documents: []Document{
 		{Path: "semantic.md", Terms: map[string]int{}, Length: 1, Embedding: []float64{1, 0}},
 		{Path: "other.md", Terms: map[string]int{}, Length: 1, Embedding: []float64{0, 1}},
 	}}
 
+	// Act
 	results, err := NewSearcher(stubIndexStore{index: index}, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
 		SearchFiles(t.Context(), []string{"memory.db"}, "needle", 10, SearchModeHybrid)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("SearchFiles error = %v", err)
 	}
@@ -58,37 +70,46 @@ func TestSearchUsesQueryEmbedding(t *testing.T) {
 	}
 }
 
-func TestSearchTokenizedSupportsBM25ModeWithoutEmbedding(t *testing.T) {
+func TestWhenNotesHaveNoEmbeddingsABM25SearchReturnsTheLexicalMatch(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index := &Index{Documents: []Document{
 		{Path: "lexical.md", Terms: map[string]int{"needle": 1}, Length: 1},
 		{Path: "other.md", Terms: map[string]int{"other": 1}, Length: 1},
 	}}
 
+	// Act
 	results := searchTokenized(index.Documents, "needle", []string{"needle"}, nil, 10, SearchModeBM25)
+
+	// Assert
 	if len(results) != 1 || results[0].Path != "lexical.md" {
 		t.Fatalf("results = %+v, want lexical.md", results)
 	}
 }
 
-func TestSearchTokenizedVectorModeIgnoresLexicalMatches(t *testing.T) {
+func TestWhenAVectorSearchRunsLexicalMatchesAreIgnored(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index := &Index{Documents: []Document{
 		{Path: "lexical.md", Terms: map[string]int{"needle": 10}, Length: 10, Embedding: []float64{0, 1}},
 		{Path: "semantic.md", Terms: map[string]int{}, Length: 1, Embedding: []float64{1, 0}},
 	}}
 
+	// Act
 	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeVector)
+
+	// Assert
 	if len(results) != 1 || results[0].Path != "semantic.md" {
 		t.Fatalf("results = %+v, want semantic.md", results)
 	}
 }
 
-func TestSearchTokenizedHybridUsesScoreFusion(t *testing.T) {
+func TestWhenAHybridSearchRunsTheScoreFusesVectorAndNormalizedBM25Scores(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index := &Index{Documents: []Document{
 		{
 			Path: "note.md",
@@ -100,7 +121,10 @@ func TestSearchTokenizedHybridUsesScoreFusion(t *testing.T) {
 		},
 	}}
 
+	// Act
 	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeHybrid)
+
+	// Assert
 	if len(results) != 1 {
 		t.Fatalf("results = %+v, want one result", results)
 	}
@@ -112,9 +136,10 @@ func TestSearchTokenizedHybridUsesScoreFusion(t *testing.T) {
 	}
 }
 
-func TestSearchTokenizedRRFUsesRRFAndCosineRescore(t *testing.T) {
+func TestWhenAnRRFSearchRunsTheTopNoteIsRescoredWithCosineSimilarity(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index := &Index{Documents: []Document{
 		{
 			Path: "keyword-and-vector.md",
@@ -139,7 +164,10 @@ func TestSearchTokenizedRRFUsesRRFAndCosineRescore(t *testing.T) {
 		},
 	}}
 
+	// Act
 	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeRRF)
+
+	// Assert
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want three results", results)
 	}
@@ -153,19 +181,23 @@ func TestSearchTokenizedRRFUsesRRFAndCosineRescore(t *testing.T) {
 	}
 }
 
-func TestSearcherRejectsUnsupportedMode(t *testing.T) {
+func TestWhenTheModeIsUnsupportedSearchingFailsWithTheModeName(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	_, err := NewSearcher(stubIndexStore{}, nil, fixedTokenizer{}).
 		SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchMode("unknown"))
+
+	// Assert
 	if err == nil || !strings.Contains(err.Error(), `unsupported search mode "unknown"`) {
 		t.Fatalf("SearchFiles error = %v, want unsupported mode", err)
 	}
 }
 
-func TestSearchCJKExactQueryDoesNotExpandToBigram(t *testing.T) {
+func TestWhenACJKQueryIsAnExactWordSearchingDoesNotMatchItsBigrams(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "tokyo.md", Content: "# 東京都\n行政区域"},
 		{Path: "kyoto.md", Content: "# 京都\n旅行"},
@@ -174,8 +206,11 @@ func TestSearchCJKExactQueryDoesNotExpandToBigram(t *testing.T) {
 		t.Fatalf("Build error = %v", err)
 	}
 
+	// Act
 	results, err := NewSearcher(stubIndexStore{index: index}, nil, cjkTokenizer{}).
 		SearchFiles(t.Context(), []string{"memory.db"}, "東京都", 10, SearchModeBM25)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("SearchFiles error = %v", err)
 	}
@@ -187,9 +222,10 @@ func TestSearchCJKExactQueryDoesNotExpandToBigram(t *testing.T) {
 	}
 }
 
-func TestSearchCJKSpacedTermsMatchCompoundDocument(t *testing.T) {
+func TestWhenACJKQueryHasSpacedTermsSearchingMatchesTheCompoundNote(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "poll.md", Content: "# 投票作成UI\n選択肢編集"},
 	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, cjkTokenizer{}).build(t.Context(), "notes")
@@ -197,8 +233,11 @@ func TestSearchCJKSpacedTermsMatchCompoundDocument(t *testing.T) {
 		t.Fatalf("Build error = %v", err)
 	}
 
+	// Act
 	results, err := NewSearcher(stubIndexStore{index: index}, nil, cjkTokenizer{}).
 		SearchFiles(t.Context(), []string{"memory.db"}, "投票 作成", 10, SearchModeBM25)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("SearchFiles error = %v", err)
 	}
@@ -210,7 +249,7 @@ func TestSearchCJKSpacedTermsMatchCompoundDocument(t *testing.T) {
 	}
 }
 
-func TestSearcherRejectsIndexBuiltWithDifferentPrefixes(t *testing.T) {
+func TestWhenTheConfiguredPrefixesDifferFromTheMemoryAHybridSearchFails(t *testing.T) {
 	t.Parallel()
 
 	// Arrange

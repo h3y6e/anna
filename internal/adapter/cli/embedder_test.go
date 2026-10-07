@@ -27,10 +27,13 @@ func nremWithEmbedderSpy(t *testing.T, extraArgs ...string) (settings EmbedderSe
 	return settings, err
 }
 
-func TestNREMDefaultsToLocalLlamaCppEndpoint(t *testing.T) {
+func TestWhenNoEmbedderIsConfiguredNremUsesTheLocalLlamaCppEndpointAndDefaultModel(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	settings, err := nremWithEmbedderSpy(t)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v", err)
 	}
@@ -45,13 +48,16 @@ func TestNREMDefaultsToLocalLlamaCppEndpoint(t *testing.T) {
 	}
 }
 
-func TestNREMFlagsOverrideEmbedderDefaults(t *testing.T) {
+func TestWhenEmbedderFlagsAreGivenNremUsesThemOverTheDefaults(t *testing.T) {
 	t.Parallel()
 
+	// Act
 	settings, err := nremWithEmbedderSpy(t,
 		"--embedder-url", "http://ollama.example:11434",
 		"--embedder-model", "qwen3-embedding:0.6b",
 	)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v", err)
 	}
@@ -63,10 +69,14 @@ func TestNREMFlagsOverrideEmbedderDefaults(t *testing.T) {
 	}
 }
 
-func TestEmbedderAPIKeyEnvVarReachesEmbedderFactory(t *testing.T) {
+func TestWhenTheAPIKeyEnvironmentVariableIsSetNremPassesItToTheEmbedder(t *testing.T) {
+	// Arrange
 	t.Setenv("ANNA_EMBEDDER_API_KEY", "secret-key")
 
+	// Act
 	settings, err := nremWithEmbedderSpy(t)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v", err)
 	}
@@ -75,10 +85,14 @@ func TestEmbedderAPIKeyEnvVarReachesEmbedderFactory(t *testing.T) {
 	}
 }
 
-func TestEmbedderURLEnvVarOverridesDefault(t *testing.T) {
+func TestWhenTheURLEnvironmentVariableIsSetNremUsesItOverTheDefault(t *testing.T) {
+	// Arrange
 	t.Setenv("ANNA_EMBEDDER_URL", "http://env.example:8080")
 
+	// Act
 	settings, err := nremWithEmbedderSpy(t)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("nrem command failed: %v", err)
 	}
@@ -87,9 +101,10 @@ func TestEmbedderURLEnvVarOverridesDefault(t *testing.T) {
 	}
 }
 
-func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
+func TestWhenTheConfigSetsAnEmbedderURLRecallUsesItWithTheDefaultModel(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	notes := tempDir(t)
 	saveMemory(t, filepath.Join(notes, ".anna.db"), "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", core.Document{
 		Path:      "note.md",
@@ -109,8 +124,12 @@ func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 		},
 		NewTokenizer: func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
 	})
+
+	// Act
 	_, stderr, err := executeCommandWithDependencies(deps,
 		"--config", configPath, "recall", "--in", notes, "query")
+
+	// Assert
 	if err != nil {
 		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -122,7 +141,7 @@ func TestRecallSelectsEmbedderFromTOMLConfig(t *testing.T) {
 	}
 }
 
-func TestNREMFlagsSetEmbedderPrefixes(t *testing.T) {
+func TestWhenPrefixFlagsAreGivenNremPassesThemToTheEmbedder(t *testing.T) {
 	t.Parallel()
 
 	// Act
@@ -140,7 +159,7 @@ func TestNREMFlagsSetEmbedderPrefixes(t *testing.T) {
 	}
 }
 
-func TestEmbedderQueryPrefixEnvVarReachesEmbedderFactory(t *testing.T) {
+func TestWhenTheQueryPrefixEnvironmentVariableIsSetNremPassesItToTheEmbedder(t *testing.T) {
 	// Arrange
 	t.Setenv("ANNA_EMBEDDER_QUERY_PREFIX", "query: ")
 
@@ -156,7 +175,7 @@ func TestEmbedderQueryPrefixEnvVarReachesEmbedderFactory(t *testing.T) {
 	}
 }
 
-func TestNREMReadsEmbedderPrefixesFromTOMLConfig(t *testing.T) {
+func TestWhenTheConfigSetsPrefixesNremPassesThemToTheEmbedder(t *testing.T) {
 	t.Parallel()
 
 	// Arrange
@@ -175,7 +194,7 @@ func TestNREMReadsEmbedderPrefixesFromTOMLConfig(t *testing.T) {
 	}
 }
 
-func TestRecallFailsWhenPrefixesDifferFromThoseTheMemoryWasBuiltWith(t *testing.T) {
+func TestWhenPrefixesDifferFromThoseTheMemoryWasBuiltWithRecallFails(t *testing.T) {
 	t.Parallel()
 
 	// Arrange
