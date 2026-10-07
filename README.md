@@ -6,7 +6,6 @@ The commands are named after sleep phases:
 
 - `nrem` builds the search index from notes
 - `recall` searches the memory
-- `rem` surfaces related note pairs
 
 ## Install
 
@@ -63,12 +62,6 @@ Run lexical search only:
 anna recall --in ~/notes --mode bm25 'search query'
 ```
 
-Surface read-only recombination candidates in one notes directory:
-
-```sh
-anna rem --in ~/notes
-```
-
 ## Configuration
 
 You can provide a TOML config file with `--config`:
@@ -85,7 +78,7 @@ Without `--config`, `anna` searches for config files in this order:
 
 Local configuration values override global configuration values.
 
-`notes` lists the directories that `nrem` builds when no directory is given and that `recall` and `rem` read when `--in` is not given; `rem` needs `--in` when `notes` lists several. Relative entries resolve against the directory of the config file that sets them. `memory` is the file name of the memory inside each notes directory; it cannot point to another directory.
+`notes` lists the directories that `nrem` builds when no directory is given and that `recall` reads when `--in` is not given. Relative entries resolve against the directory of the config file that sets them. `memory` is the file name of the memory inside each notes directory; it cannot point to another directory.
 
 Example `anna.toml`:
 
@@ -107,11 +100,6 @@ amnesia = false
 [recall]
 mode = "hybrid"
 limit = 10
-
-[rem]
-focus = "all"
-limit = 10
-threshold = 0.75
 ```
 
 `query-prefix` and `document-prefix` are prepended to search queries and notes before embedding.

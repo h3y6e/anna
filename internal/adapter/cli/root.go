@@ -57,8 +57,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 
 The commands are named after sleep phases:
   nrem   builds an embedding and term index from notes
-  recall searches the memory using bm25, vector, hybrid, or rrf
-  rem    surfaces related note pairs`,
+  recall searches the memory using bm25, vector, hybrid, or rrf`,
 		Version: Version,
 		Example: `  # Build a memory from a notes directory
   anna nrem ~/notes
@@ -99,7 +98,6 @@ The commands are named after sleep phases:
 
 	root.AddCommand(newNREMCommand(cfg, deps))
 	root.AddCommand(newRecallCommand(cfg, deps))
-	root.AddCommand(newREMCommand(cfg, deps))
 	root.AddCommand(newVersionCommand())
 	return root
 }
@@ -277,30 +275,23 @@ func memoryFile(cfg *viper.Viper) (string, error) {
 	return name, nil
 }
 
-func scopeOf(dir string, name string) (notesScope, error) {
-	expanded, err := expandPath(dir)
-	if err != nil {
-		return notesScope{}, err
-	}
-	resolved, err := filepath.EvalSymlinks(expanded)
-	if err != nil {
-		return notesScope{}, fmt.Errorf("notes directory %s: %w", dir, err)
-	}
-	abs, err := filepath.Abs(resolved)
-	if err != nil {
-		return notesScope{}, fmt.Errorf("resolve %s: %w", dir, err)
-	}
-	return notesScope{Dir: abs, Memory: filepath.Join(abs, name)}, nil
-}
-
 // resolveScopes turns notes directories into scopes and rejects directories that are the same or contain each other.
 func resolveScopes(dirs []string, name string) ([]notesScope, error) {
 	scopes := make([]notesScope, 0, len(dirs))
 	for _, dir := range dirs {
-		scope, err := scopeOf(dir, name)
+		expanded, err := expandPath(dir)
 		if err != nil {
 			return nil, err
 		}
+		resolved, err := filepath.EvalSymlinks(expanded)
+		if err != nil {
+			return nil, fmt.Errorf("notes directory %s: %w", dir, err)
+		}
+		abs, err := filepath.Abs(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		}
+		scope := notesScope{Dir: abs, Memory: filepath.Join(abs, name)}
 		for _, other := range scopes {
 			if overlap(other.Dir, scope.Dir) {
 				return nil, fmt.Errorf("notes directories %s and %s overlap; pass directories that do not contain each other", other.Dir, scope.Dir)
