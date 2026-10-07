@@ -13,24 +13,10 @@ type TextSource interface {
 
 type IndexStore interface {
 	Load(ctx context.Context, path string) (*Index, error)
-	Save(ctx context.Context, path string, index *Index) error
-}
-
-type IndexManifestStore interface {
 	LoadManifest(ctx context.Context, path string) (*IndexManifest, error)
-}
-
-type SearchIndexStore interface {
-	Search(
-		ctx context.Context,
-		paths []string,
-		query string,
-		limit int,
-		embedder Embedder,
-		tokenizer Tokenizer,
-		embedding EmbeddingProfile,
-		mode SearchMode,
-	) ([]SearchResult, error)
+	// LoadSearchDocuments reads every document with the frequencies of only the given terms, and embeddings when asked.
+	LoadSearchDocuments(ctx context.Context, path string, terms []string, withEmbedding bool) (EmbeddingProfile, []Document, error)
+	Save(ctx context.Context, path string, index *Index) error
 }
 
 type Embedder interface {

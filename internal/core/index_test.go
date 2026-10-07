@@ -229,9 +229,10 @@ func TestSearchUsesQueryEmbedding(t *testing.T) {
 		{Path: "other.md", Terms: map[string]int{}, Length: 1, Embedding: []float64{0, 1}},
 	}}
 
-	results, err := Search(t.Context(), index, "needle", []float64{1, 0}, 10, fixedTokenizer{}, SearchModeHybrid)
+	results, err := NewSearcher(stubIndexStore{index: index}, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
+		SearchFiles(t.Context(), []string{"memory.db"}, "needle", 10, SearchModeHybrid)
 	if err != nil {
-		t.Fatalf("Search error = %v", err)
+		t.Fatalf("SearchFiles error = %v", err)
 	}
 	if len(results) != 1 {
 		t.Fatalf("result count = %d, want 1: %#v", len(results), results)
@@ -249,10 +250,7 @@ func TestSearchTokenizedSupportsBM25ModeWithoutEmbedding(t *testing.T) {
 		{Path: "other.md", Terms: map[string]int{"other": 1}, Length: 1},
 	}}
 
-	results, err := SearchTokenized(index, "needle", []string{"needle"}, nil, 10, SearchModeBM25)
-	if err != nil {
-		t.Fatalf("SearchTokenized error = %v", err)
-	}
+	results := searchTokenized(index.Documents, "needle", []string{"needle"}, nil, 10, SearchModeBM25)
 	if len(results) != 1 || results[0].Path != "lexical.md" {
 		t.Fatalf("results = %+v, want lexical.md", results)
 	}
@@ -266,10 +264,7 @@ func TestSearchTokenizedVectorModeIgnoresLexicalMatches(t *testing.T) {
 		{Path: "semantic.md", Terms: map[string]int{}, Length: 1, Embedding: []float64{1, 0}},
 	}}
 
-	results, err := SearchTokenized(index, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeVector)
-	if err != nil {
-		t.Fatalf("SearchTokenized error = %v", err)
-	}
+	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeVector)
 	if len(results) != 1 || results[0].Path != "semantic.md" {
 		t.Fatalf("results = %+v, want semantic.md", results)
 	}
@@ -289,10 +284,7 @@ func TestSearchTokenizedHybridUsesScoreFusion(t *testing.T) {
 		},
 	}}
 
-	results, err := SearchTokenized(index, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeHybrid)
-	if err != nil {
-		t.Fatalf("SearchTokenized error = %v", err)
-	}
+	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeHybrid)
 	if len(results) != 1 {
 		t.Fatalf("results = %+v, want one result", results)
 	}
@@ -331,10 +323,7 @@ func TestSearchTokenizedRRFUsesRRFAndCosineRescore(t *testing.T) {
 		},
 	}}
 
-	results, err := SearchTokenized(index, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeRRF)
-	if err != nil {
-		t.Fatalf("SearchTokenized error = %v", err)
-	}
+	results := searchTokenized(index.Documents, "needle", []string{"needle"}, []float64{1, 0}, 10, SearchModeRRF)
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want three results", results)
 	}
@@ -348,12 +337,13 @@ func TestSearchTokenizedRRFUsesRRFAndCosineRescore(t *testing.T) {
 	}
 }
 
-func TestSearchTokenizedRejectsUnsupportedMode(t *testing.T) {
+func TestSearcherRejectsUnsupportedMode(t *testing.T) {
 	t.Parallel()
 
-	_, err := SearchTokenized(&Index{}, "query", []string{"query"}, nil, 10, SearchMode("unknown"))
+	_, err := NewSearcher(stubIndexStore{}, nil, fixedTokenizer{}).
+		SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchMode("unknown"))
 	if err == nil || !strings.Contains(err.Error(), `unsupported search mode "unknown"`) {
-		t.Fatalf("SearchTokenized error = %v, want unsupported mode", err)
+		t.Fatalf("SearchFiles error = %v, want unsupported mode", err)
 	}
 }
 
@@ -440,9 +430,10 @@ func TestSearchCJKExactQueryDoesNotExpandToBigram(t *testing.T) {
 		t.Fatalf("Build error = %v", err)
 	}
 
-	results, err := Search(t.Context(), index, "東京都", nil, 10, cjkTokenizer{}, SearchModeHybrid)
+	results, err := NewSearcher(stubIndexStore{index: index}, nil, cjkTokenizer{}).
+		SearchFiles(t.Context(), []string{"memory.db"}, "東京都", 10, SearchModeBM25)
 	if err != nil {
-		t.Fatalf("Search error = %v", err)
+		t.Fatalf("SearchFiles error = %v", err)
 	}
 	if len(results) != 1 {
 		t.Fatalf("result count = %d, want 1: %#v", len(results), results)
@@ -462,9 +453,10 @@ func TestSearchCJKSpacedTermsMatchCompoundDocument(t *testing.T) {
 		t.Fatalf("Build error = %v", err)
 	}
 
-	results, err := Search(t.Context(), index, "投票 作成", nil, 10, cjkTokenizer{}, SearchModeHybrid)
+	results, err := NewSearcher(stubIndexStore{index: index}, nil, cjkTokenizer{}).
+		SearchFiles(t.Context(), []string{"memory.db"}, "投票 作成", 10, SearchModeBM25)
 	if err != nil {
-		t.Fatalf("Search error = %v", err)
+		t.Fatalf("SearchFiles error = %v", err)
 	}
 	if len(results) != 1 {
 		t.Fatalf("result count = %d, want 1: %#v", len(results), results)
@@ -569,6 +561,17 @@ func (s stubIndexStore) Load(context.Context, string) (*Index, error) {
 	return &Index{}, nil
 }
 
+func (stubIndexStore) LoadManifest(context.Context, string) (*IndexManifest, error) {
+	return &IndexManifest{}, nil
+}
+
+func (s stubIndexStore) LoadSearchDocuments(context.Context, string, []string, bool) (EmbeddingProfile, []Document, error) {
+	if s.index == nil {
+		return EmbeddingProfile{}, nil, nil
+	}
+	return s.index.Embedding, s.index.Documents, nil
+}
+
 func (stubIndexStore) Save(context.Context, string, *Index) error {
 	return nil
 }
@@ -594,6 +597,10 @@ func (s *capturingIndexStore) LoadManifest(context.Context, string) (*IndexManif
 		return s.manifest, nil
 	}
 	return &IndexManifest{}, nil
+}
+
+func (s *capturingIndexStore) LoadSearchDocuments(context.Context, string, []string, bool) (EmbeddingProfile, []Document, error) {
+	return s.index.Embedding, s.index.Documents, nil
 }
 
 func (s *capturingIndexStore) Save(_ context.Context, _ string, index *Index) error {

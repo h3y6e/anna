@@ -111,11 +111,9 @@ func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath
 		return nil, err
 	}
 	hashes := contentHashes(files)
-	if manifestStore, ok := i.store.(IndexManifestStore); ok {
-		manifest, err := manifestStore.LoadManifest(ctx, indexPath)
-		if err == nil && i.canReuseManifest(manifest) && manifestMatchesFiles(manifest, files, hashes) {
-			return i.newIndexSummary(manifest.DocumentCount, manifest.GeneratedAt), nil
-		}
+	manifest, err := i.store.LoadManifest(ctx, indexPath)
+	if err == nil && i.canReuseManifest(manifest) && manifestMatchesFiles(manifest, files, hashes) {
+		return i.newIndexSummary(manifest.DocumentCount, manifest.GeneratedAt), nil
 	}
 
 	existing, err := i.store.Load(ctx, indexPath)
@@ -443,46 +441,49 @@ func (s *Searcher) SearchFiles(
 	if err := mode.Validate(); err != nil {
 		return nil, err
 	}
-	if store, ok := s.store.(SearchIndexStore); ok {
-		return store.Search(ctx, indexPaths, query, limit, s.embedder, s.tokenizer, s.embedding, mode)
+	queryTerms, err := s.tokenizer.TokenizeQuery(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("tokenize query: %w", err)
 	}
+	queryTerms = unique(queryTerms)
 
-	merged := &Index{Version: IndexVersion}
+	var docs []Document
 	for _, indexPath := range indexPaths {
-		index, err := s.store.Load(ctx, indexPath)
+		embedding, memoryDocs, err := s.store.LoadSearchDocuments(ctx, indexPath, queryTerms, mode.RequiresEmbedding())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", indexPath, err)
 		}
 		if mode.RequiresEmbedding() {
-			if err := ValidateSearchEmbedding(index.Embedding, s.embedding); err != nil {
-				return nil, err
+			if err := validateSearchEmbedding(embedding, s.embedding); err != nil {
+				return nil, fmt.Errorf("%s: %w", indexPath, err)
 			}
 		}
-		for _, doc := range index.Documents {
-			doc.Path = ResolveDocumentPath(indexPath, doc.Path)
-			merged.Documents = append(merged.Documents, doc)
+		for _, doc := range memoryDocs {
+			doc.Path = resolveDocumentPath(indexPath, doc.Path)
+			docs = append(docs, doc)
 		}
 	}
+	slices.SortFunc(docs, func(a, b Document) int { return cmp.Compare(a.Path, b.Path) })
+
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
-		var err error
 		queryEmbedding, err = s.embedder.EmbedQuery(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
-		if err := validateSearchEmbeddings(merged, queryEmbedding); err != nil {
+		if err := validateSearchEmbeddings(docs, queryEmbedding); err != nil {
 			return nil, err
 		}
 	}
-	return Search(ctx, merged, query, queryEmbedding, limit, s.tokenizer, mode)
+	return searchTokenized(docs, query, queryTerms, queryEmbedding, limit, mode), nil
 }
 
-// ResolveDocumentPath joins a document path stored in a memory file to the directory that holds the memory file.
-func ResolveDocumentPath(indexPath string, documentPath string) string {
+// resolveDocumentPath joins a document path stored in a memory file to the directory that holds the memory file.
+func resolveDocumentPath(indexPath string, documentPath string) string {
 	return filepath.Join(filepath.Dir(indexPath), filepath.FromSlash(documentPath))
 }
 
-func ValidateSearchEmbedding(recorded EmbeddingProfile, configured EmbeddingProfile) error {
+func validateSearchEmbedding(recorded EmbeddingProfile, configured EmbeddingProfile) error {
 	if recorded.Model != "" && configured.Model != "" && recorded.Model != configured.Model {
 		return fmt.Errorf(
 			"index was built with embedding model %s; search with --embedder-model %s or rebuild index",
@@ -502,11 +503,11 @@ func ValidateSearchEmbedding(recorded EmbeddingProfile, configured EmbeddingProf
 	return nil
 }
 
-func validateSearchEmbeddings(index *Index, queryEmbedding []float64) error {
+func validateSearchEmbeddings(docs []Document, queryEmbedding []float64) error {
 	if len(queryEmbedding) == 0 {
 		return fmt.Errorf("query embedding is empty")
 	}
-	for _, doc := range index.Documents {
+	for _, doc := range docs {
 		if len(doc.Embedding) == 0 {
 			return fmt.Errorf("index document %s has no embedding; rebuild index", doc.Path)
 		}
@@ -522,52 +523,32 @@ func validateSearchEmbeddings(index *Index, queryEmbedding []float64) error {
 	return nil
 }
 
-func Search(
-	ctx context.Context,
-	index *Index,
-	query string,
-	queryEmbedding []float64,
-	limit int,
-	tokenizer Tokenizer,
-	mode SearchMode,
-) ([]SearchResult, error) {
-	queryTerms, err := tokenizer.TokenizeQuery(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("tokenize query: %w", err)
-	}
-	return SearchTokenized(index, query, queryTerms, queryEmbedding, limit, mode)
-}
-
-func SearchTokenized(
-	index *Index,
+func searchTokenized(
+	docs []Document,
 	query string,
 	queryTerms []string,
 	queryEmbedding []float64,
 	limit int,
 	mode SearchMode,
-) ([]SearchResult, error) {
-	if err := mode.Validate(); err != nil {
-		return nil, err
-	}
-	queryTerms = unique(queryTerms)
+) []SearchResult {
 	if mode == SearchModeRRF {
-		return searchRRF(index, query, queryTerms, queryEmbedding, limit), nil
+		return searchRRF(docs, query, queryTerms, queryEmbedding, limit)
 	}
 
 	df := make(map[string]int, len(queryTerms))
 	for _, term := range queryTerms {
-		for _, doc := range index.Documents {
+		for _, doc := range docs {
 			if doc.Terms[term] > 0 {
 				df[term]++
 			}
 		}
 	}
 
-	docCount := len(index.Documents)
-	avgLen := averageLength(index.Documents)
+	docCount := len(docs)
+	avgLen := averageLength(docs)
 	lowerQuery := strings.ToLower(strings.TrimSpace(query))
-	results := make([]SearchResult, 0, len(index.Documents))
-	for _, doc := range index.Documents {
+	results := make([]SearchResult, 0, len(docs))
+	for _, doc := range docs {
 		bm25Score := bm25(docCount, doc, queryTerms, df, avgLen)
 		lexicalScore := bm25Score + phraseBoost(doc, lowerQuery)
 		var score float64
@@ -601,7 +582,7 @@ func SearchTokenized(
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return results, nil
+	return results
 }
 
 type rrfScoredDocument struct {
@@ -616,21 +597,21 @@ type rrfFusedDocument struct {
 	semantic float64
 }
 
-func searchRRF(index *Index, query string, queryTerms []string, queryEmbedding []float64, limit int) []SearchResult {
+func searchRRF(docs []Document, query string, queryTerms []string, queryEmbedding []float64, limit int) []SearchResult {
 	df := make(map[string]int, len(queryTerms))
 	for _, term := range queryTerms {
-		for _, doc := range index.Documents {
+		for _, doc := range docs {
 			if doc.Terms[term] > 0 {
 				df[term]++
 			}
 		}
 	}
 
-	docCount := len(index.Documents)
-	avgLen := averageLength(index.Documents)
-	keywordList := make([]rrfScoredDocument, 0, len(index.Documents))
-	vectorList := make([]rrfScoredDocument, 0, len(index.Documents))
-	for _, doc := range index.Documents {
+	docCount := len(docs)
+	avgLen := averageLength(docs)
+	keywordList := make([]rrfScoredDocument, 0, len(docs))
+	vectorList := make([]rrfScoredDocument, 0, len(docs))
+	for _, doc := range docs {
 		item := rrfScoredDocument{
 			doc:  doc,
 			bm25: bm25(docCount, doc, queryTerms, df, avgLen),
@@ -648,7 +629,7 @@ func searchRRF(index *Index, query string, queryTerms []string, queryEmbedding [
 	sortRRFList(keywordList, func(doc rrfScoredDocument) float64 { return doc.bm25 })
 	sortRRFList(vectorList, func(doc rrfScoredDocument) float64 { return doc.semantic })
 
-	fused := make(map[string]rrfFusedDocument, len(index.Documents))
+	fused := make(map[string]rrfFusedDocument, len(docs))
 	addRRF(fused, keywordList)
 	addRRF(fused, vectorList)
 	if len(fused) == 0 {

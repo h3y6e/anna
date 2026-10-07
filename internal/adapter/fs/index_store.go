@@ -247,146 +247,24 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 	return manifest, nil
 }
 
-func (IndexStore) Search(
+func (IndexStore) LoadSearchDocuments(
 	ctx context.Context,
-	paths []string,
-	query string,
-	limit int,
-	embedder core.Embedder,
-	tokenizer core.Tokenizer,
-	embedding core.EmbeddingProfile,
-	mode core.SearchMode,
-) ([]core.SearchResult, error) {
+	path string,
+	terms []string,
+	withEmbedding bool,
+) (core.EmbeddingProfile, []core.Document, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return core.EmbeddingProfile{}, nil, err
 	}
-	if err := mode.Validate(); err != nil {
-		return nil, err
-	}
-
-	type memory struct {
-		path string
-		db   *bolt.DB
-	}
-	memories := make([]memory, 0, len(paths))
-	defer func() {
-		for _, m := range memories {
-			m.db.Close()
-		}
-	}()
-	for _, path := range paths {
-		db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
-		if err != nil {
-			return nil, fmt.Errorf("open index %s: %w", path, err)
-		}
-		memories = append(memories, memory{path: path, db: db})
-		if err := validateSearchIndex(ctx, db, embedding, mode); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-	}
-
-	var queryEmbedding []float64
-	if mode.RequiresEmbedding() {
-		var err error
-		queryEmbedding, err = embedder.EmbedQuery(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("embed query: %w", err)
-		}
-		if len(queryEmbedding) == 0 {
-			return nil, fmt.Errorf("query embedding is empty")
-		}
-	}
-	queryTerms, err := tokenizer.TokenizeQuery(ctx, query)
+	db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
 	if err != nil {
-		return nil, fmt.Errorf("tokenize query: %w", err)
+		return core.EmbeddingProfile{}, nil, fmt.Errorf("open index: %w", err)
 	}
-	queryTerms = uniqueTokens(queryTerms)
+	defer db.Close()
 
-	index := &core.Index{Version: core.IndexVersion}
-	for _, m := range memories {
-		docs, err := readSearchDocuments(ctx, m.db, queryTerms, queryEmbedding, mode)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", m.path, err)
-		}
-		for _, doc := range docs {
-			doc.Path = core.ResolveDocumentPath(m.path, doc.Path)
-			index.Documents = append(index.Documents, doc)
-		}
-	}
-	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
-	return core.SearchTokenized(index, query, queryTerms, queryEmbedding, limit, mode)
-}
-
-func readSearchDocuments(
-	ctx context.Context,
-	db *bolt.DB,
-	queryTerms []string,
-	queryEmbedding []float64,
-	mode core.SearchMode,
-) ([]core.Document, error) {
+	var embedding core.EmbeddingProfile
 	var docs []core.Document
-	err := db.View(func(tx *bolt.Tx) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		documentInfo := tx.Bucket(indexDocumentInfoBucket)
-		postingsBucket := tx.Bucket(indexPostingsBucket)
-		if documentInfo == nil || postingsBucket == nil {
-			return fmt.Errorf("index optimized search buckets are missing; rebuild index")
-		}
-		embeddings := tx.Bucket(indexEmbeddingsBucket)
-		if mode.RequiresEmbedding() && embeddings == nil {
-			return fmt.Errorf("index optimized search buckets are missing; rebuild index")
-		}
-
-		termFrequencies, err := readQueryTermFrequencies(postingsBucket, queryTerms)
-		if err != nil {
-			return err
-		}
-		docs = make([]core.Document, 0, documentInfo.Stats().KeyN)
-		if err := documentInfo.ForEach(func(key []byte, value []byte) error {
-			info, err := decodeIndexDocumentInfo(value)
-			if err != nil {
-				return fmt.Errorf("decode document info %s: %w", string(key), err)
-			}
-			var embedding []float64
-			if mode.RequiresEmbedding() {
-				var err error
-				embedding, err = decodeEmbedding(embeddings.Get(key))
-				if err != nil {
-					return fmt.Errorf("decode embedding %s: %w", info.Path, err)
-				}
-				if len(embedding) == 0 {
-					return fmt.Errorf("index document %s has no embedding; rebuild index", info.Path)
-				}
-				if len(embedding) != len(queryEmbedding) {
-					return fmt.Errorf(
-						"index document %s embedding dimensions %d do not match query dimensions %d; rebuild index",
-						info.Path,
-						len(embedding),
-						len(queryEmbedding),
-					)
-				}
-			}
-			docs = append(docs, core.Document{
-				Path:        info.Path,
-				Content:     info.Content,
-				ContentHash: info.ContentHash,
-				Terms:       termFrequencies[info.Path],
-				Length:      info.Length,
-				Embedding:   embedding,
-			})
-			return nil
-		}); err != nil {
-			return fmt.Errorf("read index documents: %w", err)
-		}
-		return nil
-	})
-	return docs, err
-}
-
-func validateSearchIndex(ctx context.Context, db *bolt.DB, embedding core.EmbeddingProfile, mode core.SearchMode) error {
-	return db.View(func(tx *bolt.Tx) error {
+	err = db.View(func(tx *bolt.Tx) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -401,11 +279,45 @@ func validateSearchIndex(ctx context.Context, db *bolt.DB, embedding core.Embedd
 		if version != core.IndexVersion {
 			return fmt.Errorf("unsupported index version %d", version)
 		}
-		if mode.RequiresEmbedding() {
-			return core.ValidateSearchEmbedding(getEmbeddingProfile(meta), embedding)
+		embedding = getEmbeddingProfile(meta)
+
+		documentInfo := tx.Bucket(indexDocumentInfoBucket)
+		postingsBucket := tx.Bucket(indexPostingsBucket)
+		embeddings := tx.Bucket(indexEmbeddingsBucket)
+		if documentInfo == nil || postingsBucket == nil || embeddings == nil {
+			return fmt.Errorf("index optimized search buckets are missing; rebuild index")
+		}
+		termFrequencies, err := readQueryTermFrequencies(postingsBucket, terms)
+		if err != nil {
+			return err
+		}
+		docs = make([]core.Document, 0, documentInfo.Stats().KeyN)
+		if err := documentInfo.ForEach(func(key []byte, value []byte) error {
+			info, err := decodeIndexDocumentInfo(value)
+			if err != nil {
+				return fmt.Errorf("decode document info %s: %w", string(key), err)
+			}
+			doc := core.Document{
+				Path:        info.Path,
+				Content:     info.Content,
+				ContentHash: info.ContentHash,
+				Terms:       termFrequencies[info.Path],
+				Length:      info.Length,
+			}
+			if withEmbedding {
+				doc.Embedding, err = decodeEmbedding(embeddings.Get(key))
+				if err != nil {
+					return fmt.Errorf("decode embedding %s: %w", info.Path, err)
+				}
+			}
+			docs = append(docs, doc)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("read index documents: %w", err)
 		}
 		return nil
 	})
+	return embedding, docs, err
 }
 
 func putEmbeddingProfile(meta *bolt.Bucket, embedding core.EmbeddingProfile) error {
@@ -613,17 +525,4 @@ func decodeEmbedding(data []byte) ([]float64, error) {
 		embedding[i] = math.Float64frombits(binary.LittleEndian.Uint64(data[i*8:]))
 	}
 	return embedding, nil
-}
-
-func uniqueTokens(tokens []string) []string {
-	seen := make(map[string]bool, len(tokens))
-	unique := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if seen[token] {
-			continue
-		}
-		seen[token] = true
-		unique = append(unique, token)
-	}
-	return unique
 }

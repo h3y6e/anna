@@ -162,7 +162,7 @@ func TestIndexStoreSearchUsesOptimizedBuckets(t *testing.T) {
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
-	results, err := store.Search(
+	results, err := searchMemories(
 		t.Context(),
 		[]string{path},
 		"alpha",
@@ -201,7 +201,7 @@ func TestIndexStoreSearchBM25ModeDoesNotRequireEmbeddings(t *testing.T) {
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
-	results, err := store.Search(
+	results, err := searchMemories(
 		t.Context(),
 		[]string{path},
 		"alpha",
@@ -241,7 +241,7 @@ func TestIndexStoreSearchRejectsEmbeddingModelMismatchBeforeEmbedding(t *testing
 	if err := store.Save(t.Context(), path, index); err != nil {
 		t.Fatalf("Save error = %v", err)
 	}
-	_, err := store.Search(
+	_, err := searchMemories(
 		t.Context(),
 		[]string{path},
 		"content",
@@ -272,7 +272,7 @@ func TestIndexStoreSearchOverSeveralMemoriesKeepsSameNamedNotesApart(t *testing.
 		})
 	}
 
-	results, err := store.Search(
+	results, err := searchMemories(
 		t.Context(),
 		[]string{filepath.Join(work, ".anna.db"), filepath.Join(home, ".anna.db")},
 		"todo",
@@ -314,7 +314,7 @@ func TestIndexStoreSearchOverSeveralMemoriesScoresTermsAgainstTheCombinedCorpus(
 		core.Document{Path: "f.md", Content: "other", Terms: map[string]int{"other": 1}, Length: 1},
 	)
 	search := func(paths ...string) float64 {
-		results, err := store.Search(t.Context(), paths, "go", 10, nil, fixedTokenizer{tokens: []string{"go"}}, core.EmbeddingProfile{}, core.SearchModeBM25)
+		results, err := searchMemories(t.Context(), paths, "go", 10, nil, fixedTokenizer{tokens: []string{"go"}}, core.EmbeddingProfile{}, core.SearchModeBM25)
 		if err != nil {
 			t.Fatalf("Search error = %v", err)
 		}
@@ -345,11 +345,24 @@ func TestIndexStoreSearchRejectsMemoriesBuiltWithDifferentEmbeddingModels(t *tes
 	saveMemory(t, store, a, "model-a", doc)
 	saveMemory(t, store, b, "model-b", doc)
 
-	_, err := store.Search(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, core.EmbeddingProfile{Model: "model-a"}, core.SearchModeHybrid)
+	_, err := searchMemories(t.Context(), []string{a, b}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, core.EmbeddingProfile{Model: "model-a"}, core.SearchModeHybrid)
 
 	if err == nil || !strings.Contains(err.Error(), "index was built with embedding model model-b") {
 		t.Fatalf("Search error = %v, want embedding model mismatch", err)
 	}
+}
+
+func searchMemories(
+	ctx context.Context,
+	paths []string,
+	query string,
+	limit int,
+	embedder core.Embedder,
+	tokenizer core.Tokenizer,
+	embedding core.EmbeddingProfile,
+	mode core.SearchMode,
+) ([]core.SearchResult, error) {
+	return core.NewSearcher(IndexStore{}, embedder, tokenizer).WithEmbedding(embedding).SearchFiles(ctx, paths, query, limit, mode)
 }
 
 func saveMemory(t *testing.T, store IndexStore, path string, embeddingModel string, docs ...core.Document) {
@@ -440,7 +453,7 @@ func TestIndexStoreSearchRejectsPrefixMismatchBeforeEmbedding(t *testing.T) {
 	configured := core.EmbeddingProfile{Model: "model-a", QueryPrefix: "query: "}
 
 	// Act
-	_, err := store.Search(t.Context(), []string{path}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, configured, core.SearchModeHybrid)
+	_, err := searchMemories(t.Context(), []string{path}, "note", 10, errorEmbedder{}, fixedTokenizer{tokens: []string{"note"}}, configured, core.SearchModeHybrid)
 
 	// Assert
 	if err == nil || !strings.Contains(err.Error(), `index was built with query prefix "" and document prefix ""`) {
