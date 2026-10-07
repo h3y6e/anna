@@ -18,16 +18,6 @@ type Index struct {
 	Documents     []Document       `json:"documents"`
 }
 
-func (i *Index) Count() int {
-	if i == nil {
-		return 0
-	}
-	if i.DocumentCount > 0 {
-		return i.DocumentCount
-	}
-	return len(i.Documents)
-}
-
 type IndexManifest struct {
 	Version       int
 	Embedding     EmbeddingProfile

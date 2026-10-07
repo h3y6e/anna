@@ -71,7 +71,7 @@ func (i *Indexer) Build(ctx context.Context, source string) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	docs, err := i.buildDocuments(ctx, files, nil, nil)
+	docs, err := i.buildDocuments(ctx, files, nil, contentHashes(files))
 	if err != nil {
 		return nil, err
 	}
@@ -88,9 +88,6 @@ func (i *Indexer) BuildAndSaveWithOptions(
 	indexPath string,
 	options IndexBuildOptions,
 ) (*Index, error) {
-	if i.store == nil {
-		return nil, fmt.Errorf("index store is required")
-	}
 	if !options.Rebuild {
 		index, err := i.BuildIncremental(ctx, source, indexPath)
 		if err != nil {
@@ -109,9 +106,6 @@ func (i *Indexer) BuildAndSaveWithOptions(
 }
 
 func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath string) (*Index, error) {
-	if i.store == nil {
-		return nil, fmt.Errorf("index store is required")
-	}
 	files, err := i.readTextFiles(ctx, source)
 	if err != nil {
 		return nil, err
@@ -168,18 +162,6 @@ func (i *Indexer) canReuseManifest(manifest *IndexManifest) bool {
 }
 
 func (i *Indexer) readTextFiles(ctx context.Context, source string) ([]TextFile, error) {
-	if source == "" {
-		return nil, fmt.Errorf("source is required")
-	}
-	if i.source == nil {
-		return nil, fmt.Errorf("text source is required")
-	}
-	if i.embedder == nil {
-		return nil, fmt.Errorf("embedder is required")
-	}
-	if i.tokenizer == nil {
-		return nil, fmt.Errorf("tokenizer is required")
-	}
 	files, err := i.source.ReadTextFiles(ctx, source)
 	if err != nil {
 		return nil, err
@@ -215,9 +197,6 @@ func (i *Indexer) buildDocuments(
 			continue
 		}
 		hash := hashes[file.Path]
-		if hash == "" {
-			hash = contentHash(file.Content)
-		}
 		previousDoc, hasPrevious := previous[file.Path]
 		canReuse := hasPrevious &&
 			previousDoc.ContentHash == hash &&
@@ -461,20 +440,8 @@ func (s *Searcher) SearchFiles(
 	limit int,
 	mode SearchMode,
 ) ([]SearchResult, error) {
-	if s.store == nil {
-		return nil, fmt.Errorf("index store is required")
-	}
-	if len(indexPaths) == 0 {
-		return nil, fmt.Errorf("at least one memory file is required")
-	}
 	if err := mode.Validate(); err != nil {
 		return nil, err
-	}
-	if mode.RequiresEmbedding() && s.embedder == nil {
-		return nil, fmt.Errorf("embedder is required")
-	}
-	if s.tokenizer == nil {
-		return nil, fmt.Errorf("tokenizer is required")
 	}
 	if store, ok := s.store.(SearchIndexStore); ok {
 		return store.Search(ctx, indexPaths, query, limit, s.embedder, s.tokenizer, s.embedding, mode)
@@ -539,9 +506,6 @@ func validateSearchEmbeddings(index *Index, queryEmbedding []float64) error {
 	if len(queryEmbedding) == 0 {
 		return fmt.Errorf("query embedding is empty")
 	}
-	if index == nil {
-		return nil
-	}
 	for _, doc := range index.Documents {
 		if len(doc.Embedding) == 0 {
 			return fmt.Errorf("index document %s has no embedding; rebuild index", doc.Path)
@@ -567,9 +531,6 @@ func Search(
 	tokenizer Tokenizer,
 	mode SearchMode,
 ) ([]SearchResult, error) {
-	if tokenizer == nil {
-		return nil, fmt.Errorf("tokenizer is required")
-	}
 	queryTerms, err := tokenizer.TokenizeQuery(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("tokenize query: %w", err)
@@ -588,16 +549,7 @@ func SearchTokenized(
 	if err := mode.Validate(); err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
-		limit = 10
-	}
-	if index == nil {
-		return nil, nil
-	}
 	queryTerms = unique(queryTerms)
-	if len(index.Documents) == 0 {
-		return nil, nil
-	}
 	if mode == SearchModeRRF {
 		return searchRRF(index, query, queryTerms, queryEmbedding, limit), nil
 	}

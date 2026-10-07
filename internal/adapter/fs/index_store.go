@@ -55,9 +55,6 @@ func (IndexStore) Save(ctx context.Context, path string, index *core.Index) (err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if index == nil {
-		return fmt.Errorf("index is required")
-	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create index directory: %w", err)
@@ -240,9 +237,6 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 		}); err != nil {
 			return fmt.Errorf("read index manifest: %w", err)
 		}
-		if manifest.DocumentCount == 0 {
-			manifest.DocumentCount = len(manifest.Documents)
-		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -266,17 +260,8 @@ func (IndexStore) Search(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("at least one memory file is required")
-	}
 	if err := mode.Validate(); err != nil {
 		return nil, err
-	}
-	if mode.RequiresEmbedding() && embedder == nil {
-		return nil, fmt.Errorf("embedder is required")
-	}
-	if tokenizer == nil {
-		return nil, fmt.Errorf("tokenizer is required")
 	}
 
 	type memory struct {
@@ -574,9 +559,6 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 	}
 	if index.Version != core.IndexVersion {
 		return nil, fmt.Errorf("unsupported index version %d", index.Version)
-	}
-	if index.DocumentCount == 0 {
-		index.DocumentCount = len(index.Documents)
 	}
 	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
 	return &index, nil

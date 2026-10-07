@@ -362,15 +362,6 @@ func saveMemory(t *testing.T, store IndexStore, path string, embeddingModel stri
 	}
 }
 
-func TestIndexStoreSaveRequiresIndex(t *testing.T) {
-	t.Parallel()
-
-	err := IndexStore{}.Save(t.Context(), filepath.Join(t.TempDir(), "memory.db"), nil)
-	if err == nil || !strings.Contains(err.Error(), "index is required") {
-		t.Fatalf("Save error = %v, want index is required", err)
-	}
-}
-
 type fixedEmbedder struct {
 	embedding []float64
 }

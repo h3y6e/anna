@@ -39,6 +39,10 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 				return fmt.Errorf("query is required")
 			}
 
+			if limit < 1 {
+				return fmt.Errorf("limit must be at least 1, got %d", limit)
+			}
+
 			searchMode, err := core.ParseSearchMode(mode)
 			if err != nil {
 				return err
@@ -49,18 +53,15 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			var embedder core.Embedder
 			var settings EmbedderSettings
 			if searchMode.RequiresEmbedding() {
-				if deps.NewEmbedder == nil {
-					return fmt.Errorf("embedder factory is required")
-				}
 				settings = resolveEmbedderSettings(cfg)
 				embedder, err = deps.NewEmbedder(settings)
 				if err != nil {
 					return err
 				}
 			}
-			tokenizer, err := tokenizerFor(deps)
+			tokenizer, err := deps.NewTokenizer()
 			if err != nil {
-				return err
+				return fmt.Errorf("create tokenizer: %w", err)
 			}
 			searcher := core.NewSearcher(deps.IndexStore, embedder, tokenizer).
 				WithEmbedding(settings.profile())

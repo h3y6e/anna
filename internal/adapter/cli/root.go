@@ -231,17 +231,6 @@ func defaultConfigSearchPaths() []string {
 	return paths
 }
 
-func tokenizerFor(deps Dependencies) (core.Tokenizer, error) {
-	if deps.NewTokenizer == nil {
-		return nil, fmt.Errorf("tokenizer factory is required")
-	}
-	tokenizer, err := deps.NewTokenizer()
-	if err != nil {
-		return nil, fmt.Errorf("create tokenizer: %w", err)
-	}
-	return tokenizer, nil
-}
-
 func expandPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")

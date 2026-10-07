@@ -12,42 +12,6 @@ import (
 	"testing"
 )
 
-func TestIndexerBuildRequiresTextSource(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewIndexer(nil, nil, nil, nil).Build(t.Context(), "notes")
-	if err == nil || !strings.Contains(err.Error(), "text source is required") {
-		t.Fatalf("Build error = %v, want text source is required", err)
-	}
-}
-
-func TestIndexerBuildRequiresEmbedder(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewIndexer(stubTextSource{}, nil, nil, fixedTokenizer{}).Build(t.Context(), "notes")
-	if err == nil || !strings.Contains(err.Error(), "embedder is required") {
-		t.Fatalf("Build error = %v, want embedder is required", err)
-	}
-}
-
-func TestIndexerBuildRequiresTokenizer(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewIndexer(stubTextSource{}, nil, fixedEmbedder{embedding: []float64{1, 0}}, nil).Build(t.Context(), "notes")
-	if err == nil || !strings.Contains(err.Error(), "tokenizer is required") {
-		t.Fatalf("Build error = %v, want tokenizer is required", err)
-	}
-}
-
-func TestIndexerBuildAndSaveRequiresIndexStore(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewIndexer(stubTextSource{}, nil, nil, nil).BuildAndSave(t.Context(), "notes", "memory.db")
-	if err == nil || !strings.Contains(err.Error(), "index store is required") {
-		t.Fatalf("BuildAndSave error = %v, want index store is required", err)
-	}
-}
-
 func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 	t.Parallel()
 
@@ -143,7 +107,7 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 	if store.saved != nil {
 		t.Fatalf("Save was called for unchanged index")
 	}
-	if got := index.Count(); got != 1 {
+	if got := index.DocumentCount; got != 1 {
 		t.Fatalf("index count = %d, want 1", got)
 	}
 }
@@ -203,33 +167,6 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 	}
 	if store.saved == nil {
 		t.Fatalf("Save was not called for rebuild")
-	}
-}
-
-func TestSearcherRequiresIndexStore(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewSearcher(nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
-	if err == nil || !strings.Contains(err.Error(), "index store is required") {
-		t.Fatalf("SearchFiles error = %v, want index store is required", err)
-	}
-}
-
-func TestSearcherRequiresEmbedder(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewSearcher(stubIndexStore{}, nil, fixedTokenizer{}).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
-	if err == nil || !strings.Contains(err.Error(), "embedder is required") {
-		t.Fatalf("SearchFiles error = %v, want embedder is required", err)
-	}
-}
-
-func TestSearcherRequiresTokenizer(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewSearcher(stubIndexStore{}, fixedEmbedder{embedding: []float64{1, 0}}, nil).SearchFiles(t.Context(), []string{"memory.db"}, "query", 10, SearchModeHybrid)
-	if err == nil || !strings.Contains(err.Error(), "tokenizer is required") {
-		t.Fatalf("SearchFiles error = %v, want tokenizer is required", err)
 	}
 }
 

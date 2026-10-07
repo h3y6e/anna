@@ -137,22 +137,6 @@ func (fakeTokenizer) TokenizeQuery(_ context.Context, text string) ([]string, er
 	return strings.Fields(strings.ToLower(text)), nil
 }
 
-type spyIndexStore struct {
-	index      *core.Index
-	loadedPath string
-	saved      bool
-}
-
-func (s *spyIndexStore) Load(_ context.Context, path string) (*core.Index, error) {
-	s.loadedPath = path
-	return s.index, nil
-}
-
-func (s *spyIndexStore) Save(context.Context, string, *core.Index) error {
-	s.saved = true
-	return nil
-}
-
 // tempDir returns a temporary directory with symlinks resolved, matching the paths anna reports.
 func tempDir(t *testing.T) string {
 	t.Helper()

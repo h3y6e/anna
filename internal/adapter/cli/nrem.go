@@ -54,13 +54,10 @@ Without arguments, nrem builds the notes directories set in the config.`,
 			amnesia := cfg.GetBool("nrem.amnesia")
 			jsonOutput := cfg.GetBool("json")
 
-			if deps.NewEmbedder == nil {
-				return fmt.Errorf("embedder factory is required")
-			}
 			settings := resolveEmbedderSettings(cfg)
-			tokenizer, err := tokenizerFor(deps)
+			tokenizer, err := deps.NewTokenizer()
 			if err != nil {
-				return err
+				return fmt.Errorf("create tokenizer: %w", err)
 			}
 			embedder, err := deps.NewEmbedder(settings)
 			if err != nil {
@@ -94,11 +91,7 @@ func consolidate(
 ) error {
 	w := cmd.ErrOrStderr()
 	fmt.Fprintf(w, "nrem\t%s\t%s\tmodel=%s\n", scope.Dir, scope.Memory, embedding.Model)
-	var source core.TextSource
-	if deps.NewTextSource != nil {
-		source = deps.NewTextSource()
-	}
-	indexer := core.NewIndexer(source, deps.IndexStore, embedder, tokenizer).
+	indexer := core.NewIndexer(deps.NewTextSource(), deps.IndexStore, embedder, tokenizer).
 		WithEmbedding(embedding).
 		WithIgnoredPath(filepath.Base(scope.Memory)).
 		WithProgress(func(p core.IndexProgress) {
@@ -116,12 +109,12 @@ func consolidate(
 		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(nremResult{
 			SourcePath:    scope.Dir,
 			MemoryPath:    scope.Memory,
-			DocumentCount: index.Count(),
+			DocumentCount: index.DocumentCount,
 		}); err != nil {
 			return fmt.Errorf("write result: %w", err)
 		}
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "consolidated %d documents\t%s\n", index.Count(), scope.Memory)
+	fmt.Fprintf(cmd.OutOrStdout(), "consolidated %d documents\t%s\n", index.DocumentCount, scope.Memory)
 	return nil
 }
