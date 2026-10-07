@@ -6,9 +6,10 @@ import (
 	"testing"
 )
 
-func TestTextSourceSkipsDirectoriesAndSymlinks(t *testing.T) {
+func TestWhenTheSourceHasDirectoriesAndSymlinksReadingTextFilesReturnsOnlyRegularFiles(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := t.TempDir()
 	if err := os.Mkdir(filepath.Join(source, "dir"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -18,7 +19,10 @@ func TestTextSourceSkipsDirectoriesAndSymlinks(t *testing.T) {
 	}
 	writeTextFile(t, filepath.Join(source, "note.md"), "note")
 
+	// Act
 	files, err := TextSource{}.ReadTextFiles(t.Context(), source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("ReadTextFiles error: %v", err)
 	}
@@ -27,9 +31,10 @@ func TestTextSourceSkipsDirectoriesAndSymlinks(t *testing.T) {
 	}
 }
 
-func TestTextSourceIncludesAllowedExtensions(t *testing.T) {
+func TestWhenTheSourceHasMixedFileTypesReadingTextFilesReturnsOnlyTextExtensions(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := t.TempDir()
 	writeTextFile(t, filepath.Join(source, "note.md"), "# Note\n\nmarkdown note")
 	writeTextFile(t, filepath.Join(source, "memo.txt"), "plain text memo")
@@ -41,7 +46,10 @@ func TestTextSourceIncludesAllowedExtensions(t *testing.T) {
 	writeTextFile(t, filepath.Join(source, "noext"), "no extension text")
 	writeBinaryFile(t, filepath.Join(source, "image.bin"))
 
+	// Act
 	files, err := TextSource{}.ReadTextFiles(t.Context(), source)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("ReadTextFiles error: %v", err)
 	}

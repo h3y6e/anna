@@ -12,9 +12,10 @@ import (
 	"github.com/h3y6e/anna/internal/core"
 )
 
-func TestNREMAndRecallMarkdownMemory(t *testing.T) {
+func TestWhenNotesAreConsolidatedRecallReturnsTheMatchingNoteFirst(t *testing.T) {
 	t.Parallel()
 
+	// Arrange
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "ai.md"), "# AI Notes\n\nRetrieval augmented generation keeps local knowledge searchable.\n")
 	writeFile(t, filepath.Join(source, "cooking.md"), "# Cooking\n\nMiso soup needs dashi, tofu, and wakame.\n")
@@ -26,12 +27,15 @@ func TestNREMAndRecallMarkdownMemory(t *testing.T) {
 		t.Fatalf("nrem stdout = %q, want consolidated document count", stdout)
 	}
 
+	// Act
 	stdout, stderr, err = executeCommand(
 		"recall",
 		"--in", source,
 		"retrieval augmented generation",
 		"--limit", "1",
 	)
+
+	// Assert
 	if err != nil {
 		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr)
 	}
@@ -48,7 +52,7 @@ func executeCommand(args ...string) (string, string, error) {
 }
 
 func executeCommandWithDependencies(deps Dependencies, args ...string) (string, string, error) {
-	cmd := NewRootCommand(deps)
+	cmd := NewRootCommand("dev", deps)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
@@ -60,9 +64,7 @@ func executeCommandWithDependencies(deps Dependencies, args ...string) (string, 
 
 func defaultTestDependencies() Dependencies {
 	return Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
+		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(EmbedderSettings) (core.Embedder, error) {
 			return fakeEmbedder{}, nil
@@ -129,28 +131,8 @@ func fakeEmbedderVector(text string) []float64 {
 
 type fakeTokenizer struct{}
 
-func (fakeTokenizer) TokenizeDocument(_ context.Context, text string) ([]string, error) {
-	return strings.Fields(strings.ToLower(text)), nil
-}
-
-func (fakeTokenizer) TokenizeQuery(_ context.Context, text string) ([]string, error) {
-	return strings.Fields(strings.ToLower(text)), nil
-}
-
-type spyIndexStore struct {
-	index      *core.Index
-	loadedPath string
-	saved      bool
-}
-
-func (s *spyIndexStore) Load(_ context.Context, path string) (*core.Index, error) {
-	s.loadedPath = path
-	return s.index, nil
-}
-
-func (s *spyIndexStore) Save(context.Context, string, *core.Index) error {
-	s.saved = true
-	return nil
+func (fakeTokenizer) Tokenize(text string) []string {
+	return strings.Fields(strings.ToLower(text))
 }
 
 // tempDir returns a temporary directory with symlinks resolved, matching the paths anna reports.

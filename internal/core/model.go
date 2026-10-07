@@ -5,31 +5,19 @@ import "time"
 const IndexVersion = 5
 
 type EmbeddingProfile struct {
-	Model          string `json:"model,omitempty"`
-	QueryPrefix    string `json:"query_prefix,omitempty"`
-	DocumentPrefix string `json:"document_prefix,omitempty"`
+	Model          string
+	QueryPrefix    string
+	DocumentPrefix string
 }
 
 type Index struct {
-	Version       int              `json:"version"`
-	Embedding     EmbeddingProfile `json:"embedding"`
-	DocumentCount int              `json:"document_count,omitempty"`
-	GeneratedAt   time.Time        `json:"generated_at"`
-	Documents     []Document       `json:"documents"`
-}
-
-func (i *Index) Count() int {
-	if i == nil {
-		return 0
-	}
-	if i.DocumentCount > 0 {
-		return i.DocumentCount
-	}
-	return len(i.Documents)
+	Embedding     EmbeddingProfile
+	DocumentCount int
+	GeneratedAt   time.Time
+	Documents     []Document
 }
 
 type IndexManifest struct {
-	Version       int
 	Embedding     EmbeddingProfile
 	DocumentCount int
 	GeneratedAt   time.Time
@@ -41,12 +29,12 @@ type DocumentManifest struct {
 }
 
 type Document struct {
-	Path        string         `json:"path"`
-	Content     string         `json:"content"`
-	ContentHash string         `json:"content_hash,omitempty"`
-	Terms       map[string]int `json:"terms"`
-	Length      int            `json:"length"`
-	Embedding   []float64      `json:"embedding,omitempty"`
+	Path        string
+	Content     string
+	ContentHash string
+	Terms       map[string]int
+	Length      int
+	Embedding   []float64
 }
 
 type SearchResult struct {

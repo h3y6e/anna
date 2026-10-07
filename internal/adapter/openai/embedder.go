@@ -5,13 +5,14 @@ package openai
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,28 +21,38 @@ import (
 
 const transientEmbedRetryDelay = 500 * time.Millisecond
 
-type Embedder struct {
-	BaseURL        string
-	Model          string
-	APIKey         string
-	QueryPrefix    string
-	DocumentPrefix string
-	Client         *http.Client
+type embeddingData struct {
+	Index     int       `json:"index"`
+	Embedding []float64 `json:"embedding"`
 }
 
-func NewEmbedder(baseURL string, model string, apiKey string, queryPrefix string, documentPrefix string) Embedder {
-	return Embedder{
-		BaseURL:        baseURL,
-		Model:          model,
-		APIKey:         apiKey,
-		QueryPrefix:    queryPrefix,
-		DocumentPrefix: documentPrefix,
-		Client:         &http.Client{Timeout: 10 * time.Minute},
+type Embedder struct {
+	url            string
+	model          string
+	apiKey         string
+	queryPrefix    string
+	documentPrefix string
+}
+
+func New(baseURL string, model string, apiKey string, queryPrefix string, documentPrefix string) (Embedder, error) {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if baseURL == "" {
+		return Embedder{}, fmt.Errorf("embedding base URL is required")
 	}
+	if model == "" {
+		return Embedder{}, fmt.Errorf("embedding model is required")
+	}
+	return Embedder{
+		url:            baseURL + "/v1/embeddings",
+		model:          model,
+		apiKey:         apiKey,
+		queryPrefix:    queryPrefix,
+		documentPrefix: documentPrefix,
+	}, nil
 }
 
 func (e Embedder) EmbedQuery(ctx context.Context, text string) ([]float64, error) {
-	embeddings, err := e.embed(ctx, []string{e.QueryPrefix + text})
+	embeddings, err := e.embed(ctx, []string{e.queryPrefix + text})
 	if err != nil {
 		return nil, err
 	}
@@ -51,26 +62,14 @@ func (e Embedder) EmbedQuery(ctx context.Context, text string) ([]float64, error
 func (e Embedder) EmbedDocuments(ctx context.Context, texts []string) ([][]float64, error) {
 	prefixed := make([]string, len(texts))
 	for i, text := range texts {
-		prefixed[i] = e.DocumentPrefix + text
+		prefixed[i] = e.documentPrefix + text
 	}
 	return e.embed(ctx, prefixed)
 }
 
 func (e Embedder) embed(ctx context.Context, texts []string) ([][]float64, error) {
-	baseURL := strings.TrimRight(e.BaseURL, "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("embedding base URL is required")
-	}
-	if e.Model == "" {
-		return nil, fmt.Errorf("embedding model is required")
-	}
 	if len(texts) == 0 {
 		return nil, nil
-	}
-
-	client := e.Client
-	if client == nil {
-		client = http.DefaultClient
 	}
 
 	if _, ok := ctx.Deadline(); !ok {
@@ -83,8 +82,7 @@ func (e Embedder) embed(ctx context.Context, texts []string) ([][]float64, error
 		defer cancel()
 	}
 
-	url := baseURL + "/v1/embeddings"
-	embeddings, err := e.postEmbeddings(ctx, client, url, texts)
+	embeddings, err := e.postEmbeddings(ctx, texts)
 	if err == nil {
 		return checkCount(embeddings, len(texts))
 	}
@@ -99,7 +97,7 @@ func (e Embedder) embed(ctx context.Context, texts []string) ([][]float64, error
 		return nil, ctx.Err()
 	case <-timer.C:
 	}
-	embeddings, retryErr := e.postEmbeddings(ctx, client, url, texts)
+	embeddings, retryErr := e.postEmbeddings(ctx, texts)
 	if retryErr != nil {
 		return nil, fmt.Errorf("embed batch: %w; retry: %w", err, retryErr)
 	}
@@ -116,43 +114,40 @@ func checkCount(embeddings [][]float64, want int) ([][]float64, error) {
 // isTransientEOF matches Ollama's occasional 400 response whose JSON body
 // contains "EOF"; one retry is enough in practice.
 func isTransientEOF(err error) bool {
-	if err == nil {
-		return false
-	}
 	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
 }
 
-func (e Embedder) postEmbeddings(ctx context.Context, client *http.Client, url string, texts []string) ([][]float64, error) {
+func (e Embedder) postEmbeddings(ctx context.Context, texts []string) ([][]float64, error) {
 	body, err := json.Marshal(map[string]any{
-		"model": e.Model,
+		"model": e.model,
 		"input": texts,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if e.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+e.APIKey)
+	if e.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+e.apiKey)
 	}
 
-	res, err := client.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("post %s: %w", url, err)
+		return nil, fmt.Errorf("post %s: %w", e.url, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		message, err := io.ReadAll(io.LimitReader(res.Body, 4096))
 		if err != nil {
-			return nil, fmt.Errorf("post %s: %s: read error response: %w", url, res.Status, err)
+			return nil, fmt.Errorf("post %s: %s: read error response: %w", e.url, res.Status, err)
 		}
 		if isContextOverflowError(message) {
-			return nil, fmt.Errorf("post %s: %s: %s: %w", url, res.Status, strings.TrimSpace(string(message)), core.ErrEmbedTextTooLarge)
+			return nil, fmt.Errorf("post %s: %s: %s: %w", e.url, res.Status, strings.TrimSpace(string(message)), core.ErrEmbedTextTooLarge)
 		}
-		return nil, fmt.Errorf("post %s: %s: %s", url, res.Status, strings.TrimSpace(string(message)))
+		return nil, fmt.Errorf("post %s: %s: %s", e.url, res.Status, strings.TrimSpace(string(message)))
 	}
 
 	const maxResponseBytes = 1 << 20
@@ -162,10 +157,7 @@ func (e Embedder) postEmbeddings(ctx context.Context, client *http.Client, url s
 	}
 
 	var decoded struct {
-		Data []struct {
-			Index     int       `json:"index"`
-			Embedding []float64 `json:"embedding"`
-		} `json:"data"`
+		Data []embeddingData `json:"data"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
@@ -173,9 +165,7 @@ func (e Embedder) postEmbeddings(ctx context.Context, client *http.Client, url s
 	if len(decoded.Data) == 0 {
 		return nil, fmt.Errorf("response did not include embedding: %s", strings.TrimSpace(string(body)))
 	}
-	sort.Slice(decoded.Data, func(i, j int) bool {
-		return decoded.Data[i].Index < decoded.Data[j].Index
-	})
+	slices.SortFunc(decoded.Data, func(a, b embeddingData) int { return cmp.Compare(a.Index, b.Index) })
 	embeddings := make([][]float64, len(decoded.Data))
 	for i, item := range decoded.Data {
 		embeddings[i] = item.Embedding

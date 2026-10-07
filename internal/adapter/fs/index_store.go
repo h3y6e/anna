@@ -55,9 +55,6 @@ func (IndexStore) Save(ctx context.Context, path string, index *core.Index) (err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if index == nil {
-		return fmt.Errorf("index is required")
-	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create index directory: %w", err)
@@ -125,7 +122,7 @@ func saveIndexToDB(ctx context.Context, db *bolt.DB, index *core.Index) error {
 			return fmt.Errorf("create index embeddings bucket: %w", err)
 		}
 
-		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(index.Version))); err != nil {
+		if err := meta.Put(indexVersionKey, []byte(strconv.Itoa(core.IndexVersion))); err != nil {
 			return fmt.Errorf("write index version: %w", err)
 		}
 		if err := putEmbeddingProfile(meta, index.Embedding); err != nil {
@@ -203,35 +200,17 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		meta := tx.Bucket(indexMetaBucket)
-		if meta == nil {
-			return fmt.Errorf("index metadata bucket is missing")
+		meta, err := readMeta(tx)
+		if err != nil {
+			return err
 		}
 		bucket := tx.Bucket(indexManifestBucket)
 		if bucket == nil {
 			return fmt.Errorf("index manifest bucket is missing")
 		}
-
-		version, err := strconv.Atoi(string(meta.Get(indexVersionKey)))
-		if err != nil {
-			return fmt.Errorf("decode index version: %w", err)
-		}
-		manifest.Version = version
-		manifest.Embedding = getEmbeddingProfile(meta)
-		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
-			parsed, err := strconv.Atoi(string(count))
-			if err != nil {
-				return fmt.Errorf("decode index document count: %w", err)
-			}
-			manifest.DocumentCount = parsed
-		}
-		if generatedAt := meta.Get(indexGeneratedAtKey); len(generatedAt) > 0 {
-			parsed, err := time.Parse(time.RFC3339Nano, string(generatedAt))
-			if err != nil {
-				return fmt.Errorf("decode index generated time: %w", err)
-			}
-			manifest.GeneratedAt = parsed
-		}
+		manifest.Embedding = meta.embedding
+		manifest.DocumentCount = meta.documentCount
+		manifest.GeneratedAt = meta.generatedAt
 
 		manifest.Documents = make(map[string]core.DocumentManifest, bucket.Stats().KeyN)
 		if err := bucket.ForEach(func(key []byte, value []byte) error {
@@ -240,121 +219,47 @@ func (IndexStore) LoadManifest(ctx context.Context, path string) (*core.IndexMan
 		}); err != nil {
 			return fmt.Errorf("read index manifest: %w", err)
 		}
-		if manifest.DocumentCount == 0 {
-			manifest.DocumentCount = len(manifest.Documents)
-		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	if manifest.Version != core.IndexVersion {
-		return nil, fmt.Errorf("unsupported index version %d", manifest.Version)
-	}
 	return manifest, nil
 }
 
-func (IndexStore) Search(
+func (IndexStore) LoadSearchDocuments(
 	ctx context.Context,
-	paths []string,
-	query string,
-	limit int,
-	embedder core.Embedder,
-	tokenizer core.Tokenizer,
-	embedding core.EmbeddingProfile,
-	mode core.SearchMode,
-) ([]core.SearchResult, error) {
+	path string,
+	terms []string,
+	withEmbedding bool,
+) (core.EmbeddingProfile, []core.Document, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return core.EmbeddingProfile{}, nil, err
 	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("at least one memory file is required")
-	}
-	if err := mode.Validate(); err != nil {
-		return nil, err
-	}
-	if mode.RequiresEmbedding() && embedder == nil {
-		return nil, fmt.Errorf("embedder is required")
-	}
-	if tokenizer == nil {
-		return nil, fmt.Errorf("tokenizer is required")
-	}
-
-	type memory struct {
-		path string
-		db   *bolt.DB
-	}
-	memories := make([]memory, 0, len(paths))
-	defer func() {
-		for _, m := range memories {
-			m.db.Close()
-		}
-	}()
-	for _, path := range paths {
-		db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
-		if err != nil {
-			return nil, fmt.Errorf("open index %s: %w", path, err)
-		}
-		memories = append(memories, memory{path: path, db: db})
-		if err := validateSearchIndex(ctx, db, embedding, mode); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-	}
-
-	var queryEmbedding []float64
-	if mode.RequiresEmbedding() {
-		var err error
-		queryEmbedding, err = embedder.EmbedQuery(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("embed query: %w", err)
-		}
-		if len(queryEmbedding) == 0 {
-			return nil, fmt.Errorf("query embedding is empty")
-		}
-	}
-	queryTerms, err := tokenizer.TokenizeQuery(ctx, query)
+	db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
 	if err != nil {
-		return nil, fmt.Errorf("tokenize query: %w", err)
+		return core.EmbeddingProfile{}, nil, fmt.Errorf("open index: %w", err)
 	}
-	queryTerms = uniqueTokens(queryTerms)
+	defer db.Close()
 
-	index := &core.Index{Version: core.IndexVersion}
-	for _, m := range memories {
-		docs, err := readSearchDocuments(ctx, m.db, queryTerms, queryEmbedding, mode)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", m.path, err)
-		}
-		for _, doc := range docs {
-			doc.Path = core.ResolveDocumentPath(m.path, doc.Path)
-			index.Documents = append(index.Documents, doc)
-		}
-	}
-	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
-	return core.SearchTokenized(index, query, queryTerms, queryEmbedding, limit, mode)
-}
-
-func readSearchDocuments(
-	ctx context.Context,
-	db *bolt.DB,
-	queryTerms []string,
-	queryEmbedding []float64,
-	mode core.SearchMode,
-) ([]core.Document, error) {
+	var embedding core.EmbeddingProfile
 	var docs []core.Document
-	err := db.View(func(tx *bolt.Tx) error {
+	err = db.View(func(tx *bolt.Tx) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		meta, err := readMeta(tx)
+		if err != nil {
+			return err
+		}
+		embedding = meta.embedding
+
 		documentInfo := tx.Bucket(indexDocumentInfoBucket)
 		postingsBucket := tx.Bucket(indexPostingsBucket)
-		if documentInfo == nil || postingsBucket == nil {
-			return fmt.Errorf("index optimized search buckets are missing; rebuild index")
-		}
 		embeddings := tx.Bucket(indexEmbeddingsBucket)
-		if mode.RequiresEmbedding() && embeddings == nil {
+		if documentInfo == nil || postingsBucket == nil || embeddings == nil {
 			return fmt.Errorf("index optimized search buckets are missing; rebuild index")
 		}
-
-		termFrequencies, err := readQueryTermFrequencies(postingsBucket, queryTerms)
+		termFrequencies, err := readQueryTermFrequencies(postingsBucket, terms)
 		if err != nil {
 			return err
 		}
@@ -364,63 +269,27 @@ func readSearchDocuments(
 			if err != nil {
 				return fmt.Errorf("decode document info %s: %w", string(key), err)
 			}
-			var embedding []float64
-			if mode.RequiresEmbedding() {
-				var err error
-				embedding, err = decodeEmbedding(embeddings.Get(key))
-				if err != nil {
-					return fmt.Errorf("decode embedding %s: %w", info.Path, err)
-				}
-				if len(embedding) == 0 {
-					return fmt.Errorf("index document %s has no embedding; rebuild index", info.Path)
-				}
-				if len(embedding) != len(queryEmbedding) {
-					return fmt.Errorf(
-						"index document %s embedding dimensions %d do not match query dimensions %d; rebuild index",
-						info.Path,
-						len(embedding),
-						len(queryEmbedding),
-					)
-				}
-			}
-			docs = append(docs, core.Document{
+			doc := core.Document{
 				Path:        info.Path,
 				Content:     info.Content,
 				ContentHash: info.ContentHash,
 				Terms:       termFrequencies[info.Path],
 				Length:      info.Length,
-				Embedding:   embedding,
-			})
+			}
+			if withEmbedding {
+				doc.Embedding, err = decodeEmbedding(embeddings.Get(key))
+				if err != nil {
+					return fmt.Errorf("decode embedding %s: %w", info.Path, err)
+				}
+			}
+			docs = append(docs, doc)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("read index documents: %w", err)
 		}
 		return nil
 	})
-	return docs, err
-}
-
-func validateSearchIndex(ctx context.Context, db *bolt.DB, embedding core.EmbeddingProfile, mode core.SearchMode) error {
-	return db.View(func(tx *bolt.Tx) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		meta := tx.Bucket(indexMetaBucket)
-		if meta == nil {
-			return fmt.Errorf("index metadata bucket is missing")
-		}
-		version, err := strconv.Atoi(string(meta.Get(indexVersionKey)))
-		if err != nil {
-			return fmt.Errorf("decode index version: %w", err)
-		}
-		if version != core.IndexVersion {
-			return fmt.Errorf("unsupported index version %d", version)
-		}
-		if mode.RequiresEmbedding() {
-			return core.ValidateSearchEmbedding(getEmbeddingProfile(meta), embedding)
-		}
-		return nil
-	})
+	return embedding, docs, err
 }
 
 func putEmbeddingProfile(meta *bolt.Bucket, embedding core.EmbeddingProfile) error {
@@ -436,12 +305,41 @@ func putEmbeddingProfile(meta *bolt.Bucket, embedding core.EmbeddingProfile) err
 	return nil
 }
 
-func getEmbeddingProfile(meta *bolt.Bucket) core.EmbeddingProfile {
-	return core.EmbeddingProfile{
-		Model:          string(meta.Get(indexEmbeddingModelKey)),
-		QueryPrefix:    string(meta.Get(indexQueryPrefixKey)),
-		DocumentPrefix: string(meta.Get(indexDocumentPrefixKey)),
+type indexMeta struct {
+	embedding     core.EmbeddingProfile
+	documentCount int
+	generatedAt   time.Time
+}
+
+func readMeta(tx *bolt.Tx) (indexMeta, error) {
+	meta := tx.Bucket(indexMetaBucket)
+	if meta == nil {
+		return indexMeta{}, fmt.Errorf("index metadata bucket is missing")
 	}
+	version, err := strconv.Atoi(string(meta.Get(indexVersionKey)))
+	if err != nil {
+		return indexMeta{}, fmt.Errorf("decode index version: %w", err)
+	}
+	if version != core.IndexVersion {
+		return indexMeta{}, fmt.Errorf("index version %d, want %d: %w", version, core.IndexVersion, core.ErrIndexVersionMismatch)
+	}
+	documentCount, err := strconv.Atoi(string(meta.Get(indexDocumentCountKey)))
+	if err != nil {
+		return indexMeta{}, fmt.Errorf("decode index document count: %w", err)
+	}
+	generatedAt, err := time.Parse(time.RFC3339Nano, string(meta.Get(indexGeneratedAtKey)))
+	if err != nil {
+		return indexMeta{}, fmt.Errorf("decode index generated time: %w", err)
+	}
+	return indexMeta{
+		embedding: core.EmbeddingProfile{
+			Model:          string(meta.Get(indexEmbeddingModelKey)),
+			QueryPrefix:    string(meta.Get(indexQueryPrefixKey)),
+			DocumentPrefix: string(meta.Get(indexDocumentPrefixKey)),
+		},
+		documentCount: documentCount,
+		generatedAt:   generatedAt,
+	}, nil
 }
 
 func readQueryTermFrequencies(postingsBucket *bolt.Bucket, queryTerms []string) (map[string]map[string]int, error) {
@@ -483,9 +381,9 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		meta := tx.Bucket(indexMetaBucket)
-		if meta == nil {
-			return fmt.Errorf("index metadata bucket is missing")
+		meta, err := readMeta(tx)
+		if err != nil {
+			return err
 		}
 		documentInfo := tx.Bucket(indexDocumentInfoBucket)
 		if documentInfo == nil {
@@ -504,26 +402,9 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 			return fmt.Errorf("index embeddings bucket is missing")
 		}
 
-		version, err := strconv.Atoi(string(meta.Get(indexVersionKey)))
-		if err != nil {
-			return fmt.Errorf("decode index version: %w", err)
-		}
-		index.Version = version
-		index.Embedding = getEmbeddingProfile(meta)
-		if count := meta.Get(indexDocumentCountKey); len(count) > 0 {
-			parsed, err := strconv.Atoi(string(count))
-			if err != nil {
-				return fmt.Errorf("decode index document count: %w", err)
-			}
-			index.DocumentCount = parsed
-		}
-		if generatedAt := meta.Get(indexGeneratedAtKey); len(generatedAt) > 0 {
-			parsed, err := time.Parse(time.RFC3339Nano, string(generatedAt))
-			if err != nil {
-				return fmt.Errorf("decode index generated time: %w", err)
-			}
-			index.GeneratedAt = parsed
-		}
+		index.Embedding = meta.embedding
+		index.DocumentCount = meta.documentCount
+		index.GeneratedAt = meta.generatedAt
 
 		documentIndexes := make(map[string]int, documentInfo.Stats().KeyN)
 		index.Documents = make([]core.Document, 0, documentInfo.Stats().KeyN)
@@ -571,12 +452,6 @@ func (IndexStore) Load(ctx context.Context, path string) (*core.Index, error) {
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-	if index.Version != core.IndexVersion {
-		return nil, fmt.Errorf("unsupported index version %d", index.Version)
-	}
-	if index.DocumentCount == 0 {
-		index.DocumentCount = len(index.Documents)
 	}
 	slices.SortFunc(index.Documents, func(a, b core.Document) int { return cmp.Compare(a.Path, b.Path) })
 	return &index, nil
@@ -631,17 +506,4 @@ func decodeEmbedding(data []byte) ([]float64, error) {
 		embedding[i] = math.Float64frombits(binary.LittleEndian.Uint64(data[i*8:]))
 	}
 	return embedding, nil
-}
-
-func uniqueTokens(tokens []string) []string {
-	seen := make(map[string]bool, len(tokens))
-	unique := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if seen[token] {
-			continue
-		}
-		seen[token] = true
-		unique = append(unique, token)
-	}
-	return unique
 }

@@ -3,7 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"io"
 
 	"github.com/h3y6e/anna/internal/core"
 	"github.com/spf13/cobra"
@@ -51,23 +51,33 @@ Without arguments, nrem builds the notes directories set in the config.`,
 			if err != nil {
 				return err
 			}
-			amnesia := cfg.GetBool("nrem.amnesia")
-			jsonOutput := cfg.GetBool("json")
-
-			if deps.NewEmbedder == nil {
-				return fmt.Errorf("embedder factory is required")
-			}
 			settings := resolveEmbedderSettings(cfg)
-			tokenizer, err := tokenizerFor(deps)
+			tokenizer, err := deps.NewTokenizer()
 			if err != nil {
-				return err
+				return fmt.Errorf("create tokenizer: %w", err)
 			}
 			embedder, err := deps.NewEmbedder(settings)
 			if err != nil {
 				return err
 			}
+			stderr := cmd.ErrOrStderr()
+			indexer := core.NewIndexer(deps.TextSource, deps.IndexStore, embedder, tokenizer).
+				WithEmbedding(settings.profile()).
+				WithIgnoredPath(name).
+				WithProgress(func(p core.IndexProgress) {
+					if p.Cached {
+						fmt.Fprintf(stderr, "  [%d/%d]\t%s\t(cached)\n", p.Current, p.Total, p.Path)
+					} else {
+						fmt.Fprintf(stderr, "  [%d/%d]\t%s\n", p.Current, p.Total, p.Path)
+					}
+				})
 			for _, scope := range scopes {
-				if err := consolidate(cmd, deps, tokenizer, embedder, settings.profile(), scope, amnesia, jsonOutput); err != nil {
+				fmt.Fprintf(stderr, "nrem\t%s\t%s\tmodel=%s\n", scope.Dir, scope.Memory, settings.Model)
+				index, err := indexer.BuildAndSave(cmd.Context(), scope.Dir, scope.Memory, cfg.GetBool("nrem.amnesia"))
+				if err != nil {
+					return fmt.Errorf("consolidate %s: %w", scope.Dir, err)
+				}
+				if err := writeNREMResult(cmd.OutOrStdout(), scope, index.DocumentCount, cfg.GetBool("json")); err != nil {
 					return err
 				}
 			}
@@ -82,46 +92,17 @@ Without arguments, nrem builds the notes directories set in the config.`,
 	return cmd
 }
 
-func consolidate(
-	cmd *cobra.Command,
-	deps Dependencies,
-	tokenizer core.Tokenizer,
-	embedder core.Embedder,
-	embedding core.EmbeddingProfile,
-	scope notesScope,
-	amnesia bool,
-	jsonOutput bool,
-) error {
-	w := cmd.ErrOrStderr()
-	fmt.Fprintf(w, "nrem\t%s\t%s\tmodel=%s\n", scope.Dir, scope.Memory, embedding.Model)
-	var source core.TextSource
-	if deps.NewTextSource != nil {
-		source = deps.NewTextSource()
-	}
-	indexer := core.NewIndexer(source, deps.IndexStore, embedder, tokenizer).
-		WithEmbedding(embedding).
-		WithIgnoredPath(filepath.Base(scope.Memory)).
-		WithProgress(func(p core.IndexProgress) {
-			if p.Cached {
-				fmt.Fprintf(w, "  [%d/%d]\t%s\t(cached)\n", p.Current, p.Total, p.Path)
-			} else {
-				fmt.Fprintf(w, "  [%d/%d]\t%s\n", p.Current, p.Total, p.Path)
-			}
-		})
-	index, err := indexer.BuildAndSaveWithOptions(cmd.Context(), scope.Dir, scope.Memory, core.IndexBuildOptions{Rebuild: amnesia})
-	if err != nil {
-		return fmt.Errorf("consolidate %s: %w", scope.Dir, err)
-	}
-	if jsonOutput {
-		if err := json.NewEncoder(cmd.OutOrStdout()).Encode(nremResult{
-			SourcePath:    scope.Dir,
-			MemoryPath:    scope.Memory,
-			DocumentCount: index.Count(),
-		}); err != nil {
-			return fmt.Errorf("write result: %w", err)
-		}
+func writeNREMResult(w io.Writer, scope notesScope, documentCount int, jsonOutput bool) error {
+	if !jsonOutput {
+		fmt.Fprintf(w, "consolidated %d documents\t%s\n", documentCount, scope.Memory)
 		return nil
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "consolidated %d documents\t%s\n", index.Count(), scope.Memory)
+	if err := json.NewEncoder(w).Encode(nremResult{
+		SourcePath:    scope.Dir,
+		MemoryPath:    scope.Memory,
+		DocumentCount: documentCount,
+	}); err != nil {
+		return fmt.Errorf("write result: %w", err)
+	}
 	return nil
 }

@@ -14,37 +14,14 @@ import (
 )
 
 type Dependencies struct {
-	NewTextSource     func() core.TextSource
+	TextSource        core.TextSource
 	IndexStore        core.IndexStore
 	NewEmbedder       func(settings EmbedderSettings) (core.Embedder, error)
 	NewTokenizer      func() (core.Tokenizer, error)
 	ConfigSearchPaths []string
 }
 
-// EmbedderSettings selects an OpenAI-compatible /v1/embeddings backend.
-type EmbedderSettings struct {
-	BaseURL        string
-	Model          string
-	APIKey         string
-	QueryPrefix    string
-	DocumentPrefix string
-}
-
-func resolveEmbedderSettings(cfg *viper.Viper) EmbedderSettings {
-	return EmbedderSettings{
-		BaseURL:        cfg.GetString("embedder.url"),
-		Model:          cfg.GetString("embedder.model"),
-		APIKey:         cfg.GetString("embedder.api-key"),
-		QueryPrefix:    cfg.GetString("embedder.query-prefix"),
-		DocumentPrefix: cfg.GetString("embedder.document-prefix"),
-	}
-}
-
-func (s EmbedderSettings) profile() core.EmbeddingProfile {
-	return core.EmbeddingProfile{Model: s.Model, QueryPrefix: s.QueryPrefix, DocumentPrefix: s.DocumentPrefix}
-}
-
-func NewRootCommand(deps Dependencies) *cobra.Command {
+func NewRootCommand(version string, deps Dependencies) *cobra.Command {
 	cfg := viper.New()
 	cfg.SetEnvPrefix("anna")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
@@ -58,7 +35,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 The commands are named after sleep phases:
   nrem   builds an embedding and term index from notes
   recall searches the memory using bm25, vector, hybrid, or rrf`,
-		Version: Version,
+		Version: version,
 		Example: `  # Build a memory from a notes directory
   anna nrem ~/notes
 
@@ -98,7 +75,6 @@ The commands are named after sleep phases:
 
 	root.AddCommand(newNREMCommand(cfg, deps))
 	root.AddCommand(newRecallCommand(cfg, deps))
-	root.AddCommand(newVersionCommand())
 	return root
 }
 
@@ -231,17 +207,6 @@ func defaultConfigSearchPaths() []string {
 	return paths
 }
 
-func tokenizerFor(deps Dependencies) (core.Tokenizer, error) {
-	if deps.NewTokenizer == nil {
-		return nil, fmt.Errorf("tokenizer factory is required")
-	}
-	tokenizer, err := deps.NewTokenizer()
-	if err != nil {
-		return nil, fmt.Errorf("create tokenizer: %w", err)
-	}
-	return tokenizer, nil
-}
-
 func expandPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is required")
@@ -371,15 +336,4 @@ func overlap(a string, b string) bool {
 func contains(dir string, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func addInFlag(cmd *cobra.Command) {
-	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config)")
-	_ = cmd.MarkFlagDirname("in")
-}
-
-func completeChoices(choices ...string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-	return func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return choices, cobra.ShellCompDirectiveNoFileComp
-	}
 }

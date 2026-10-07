@@ -39,6 +39,10 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 				return fmt.Errorf("query is required")
 			}
 
+			if limit < 1 {
+				return fmt.Errorf("limit must be at least 1, got %d", limit)
+			}
+
 			searchMode, err := core.ParseSearchMode(mode)
 			if err != nil {
 				return err
@@ -49,18 +53,15 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			var embedder core.Embedder
 			var settings EmbedderSettings
 			if searchMode.RequiresEmbedding() {
-				if deps.NewEmbedder == nil {
-					return fmt.Errorf("embedder factory is required")
-				}
 				settings = resolveEmbedderSettings(cfg)
 				embedder, err = deps.NewEmbedder(settings)
 				if err != nil {
 					return err
 				}
 			}
-			tokenizer, err := tokenizerFor(deps)
+			tokenizer, err := deps.NewTokenizer()
 			if err != nil {
-				return err
+				return fmt.Errorf("create tokenizer: %w", err)
 			}
 			searcher := core.NewSearcher(deps.IndexStore, embedder, tokenizer).
 				WithEmbedding(settings.profile())
@@ -88,11 +89,15 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			return nil
 		},
 	}
-	addInFlag(cmd)
+	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config)")
+	_ = cmd.MarkFlagDirname("in")
 	cmd.Flags().Int("limit", 10, "maximum results")
 	cmd.Flags().String("mode", string(core.SearchModeHybrid), "recall mode: bm25, vector, hybrid, or rrf")
 	_ = cfg.BindPFlag("recall.limit", cmd.Flags().Lookup("limit"))
 	_ = cfg.BindPFlag("recall.mode", cmd.Flags().Lookup("mode"))
-	_ = cmd.RegisterFlagCompletionFunc("mode", completeChoices("bm25", "vector", "hybrid", "rrf"))
+	_ = cmd.RegisterFlagCompletionFunc("mode", cobra.FixedCompletions(
+		[]string{"bm25", "vector", "hybrid", "rrf"},
+		cobra.ShellCompDirectiveNoFileComp,
+	))
 	return cmd
 }
