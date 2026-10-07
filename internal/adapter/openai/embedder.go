@@ -5,13 +5,14 @@ package openai
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ import (
 )
 
 const transientEmbedRetryDelay = 500 * time.Millisecond
+
+type embeddingData struct {
+	Index     int       `json:"index"`
+	Embedding []float64 `json:"embedding"`
+}
 
 type Embedder struct {
 	url            string
@@ -108,9 +114,6 @@ func checkCount(embeddings [][]float64, want int) ([][]float64, error) {
 // isTransientEOF matches Ollama's occasional 400 response whose JSON body
 // contains "EOF"; one retry is enough in practice.
 func isTransientEOF(err error) bool {
-	if err == nil {
-		return false
-	}
 	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF")
 }
 
@@ -154,10 +157,7 @@ func (e Embedder) postEmbeddings(ctx context.Context, texts []string) ([][]float
 	}
 
 	var decoded struct {
-		Data []struct {
-			Index     int       `json:"index"`
-			Embedding []float64 `json:"embedding"`
-		} `json:"data"`
+		Data []embeddingData `json:"data"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
@@ -165,9 +165,7 @@ func (e Embedder) postEmbeddings(ctx context.Context, texts []string) ([][]float
 	if len(decoded.Data) == 0 {
 		return nil, fmt.Errorf("response did not include embedding: %s", strings.TrimSpace(string(body)))
 	}
-	sort.Slice(decoded.Data, func(i, j int) bool {
-		return decoded.Data[i].Index < decoded.Data[j].Index
-	})
+	slices.SortFunc(decoded.Data, func(a, b embeddingData) int { return cmp.Compare(a.Index, b.Index) })
 	embeddings := make([][]float64, len(decoded.Data))
 	for i, item := range decoded.Data {
 		embeddings[i] = item.Embedding

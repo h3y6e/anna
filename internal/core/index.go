@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -154,8 +155,8 @@ func (i *Indexer) readTextFiles(ctx context.Context, source string) ([]TextFile,
 }
 
 const (
-	defaultEmbedBatchSize = 32
-	defaultEmbedWorkers   = 4
+	embedBatchSize = 32
+	embedWorkers   = 4
 )
 
 type embedWork struct {
@@ -193,7 +194,7 @@ func (i *Indexer) buildDocuments(
 		workItems = append(workItems, embedWork{index: idx, file: file, hash: hash})
 	}
 
-	if err := i.embedWorkItems(ctx, files, docs, workItems); err != nil {
+	if err := i.embedWorkItems(ctx, docs, workItems); err != nil {
 		return nil, err
 	}
 
@@ -202,29 +203,19 @@ func (i *Indexer) buildDocuments(
 	return docs, nil
 }
 
-func (i *Indexer) embedWorkItems(ctx context.Context, files []TextFile, docs []Document, workItems []embedWork) error {
-	if len(workItems) == 0 {
-		return nil
-	}
-
-	chunkSize := defaultEmbedBatchSize
-	workers := defaultEmbedWorkers
-
+func (i *Indexer) embedWorkItems(ctx context.Context, docs []Document, workItems []embedWork) error {
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(workers)
-	for start := 0; start < len(workItems); start += chunkSize {
-		end := min(start+chunkSize, len(workItems))
-		chunk := workItems[start:end]
+	g.SetLimit(embedWorkers)
+	for chunk := range slices.Chunk(workItems, embedBatchSize) {
 		g.Go(func() error {
-			return i.embedChunk(ctx, files, docs, chunk)
+			return i.embedChunk(ctx, docs, chunk)
 		})
 	}
 	return g.Wait()
 }
 
-func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Document, chunk []embedWork) error {
+func (i *Indexer) embedChunk(ctx context.Context, docs []Document, chunk []embedWork) error {
 	texts := make([]string, 0, len(chunk))
-	pending := make([]*Document, 0, len(chunk))
 	for _, w := range chunk {
 		indexTitle := shortDocumentTitle(Document{Path: w.file.Path, Content: w.file.Content})
 		terms := countTerms(i.tokenizer.Tokenize(indexTitle + " " + indexTitle + " " + indexTitle + " " + w.file.Content))
@@ -235,24 +226,17 @@ func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Docum
 		doc.Terms = terms
 		doc.Length = termCount(terms)
 		texts = append(texts, doc.Content)
-		pending = append(pending, doc)
 	}
 
 	embeddings, err := i.embedBatchWithFallback(ctx, texts)
 	if err != nil {
-		return fmt.Errorf("embed batch: %w", err)
-	}
-	if len(embeddings) != len(texts) {
-		return fmt.Errorf("embed batch: expected %d embeddings, got %d", len(texts), len(embeddings))
+		return err
 	}
 
-	for j, doc := range pending {
-		doc.Embedding = embeddings[j]
+	for j, w := range chunk {
+		docs[w.index].Embedding = embeddings[j]
 		if i.progress != nil {
-			idx := slices.IndexFunc(files, func(f TextFile) bool { return f.Path == doc.Path })
-			if idx >= 0 {
-				i.progress(IndexProgress{Current: idx + 1, Total: len(files), Path: doc.Path})
-			}
+			i.progress(IndexProgress{Current: w.index + 1, Total: len(docs), Path: w.file.Path})
 		}
 	}
 	return nil
@@ -511,15 +495,7 @@ func searchTokenized(
 		return searchRRF(docs, query, queryTerms, queryEmbedding, limit)
 	}
 
-	df := make(map[string]int, len(queryTerms))
-	for _, term := range queryTerms {
-		for _, doc := range docs {
-			if doc.Terms[term] > 0 {
-				df[term]++
-			}
-		}
-	}
-
+	df := documentFrequencies(docs, queryTerms)
 	docCount := len(docs)
 	avgLen := averageLength(docs)
 	lowerQuery := strings.ToLower(strings.TrimSpace(query))
@@ -574,15 +550,7 @@ type rrfFusedDocument struct {
 }
 
 func searchRRF(docs []Document, query string, queryTerms []string, queryEmbedding []float64, limit int) []SearchResult {
-	df := make(map[string]int, len(queryTerms))
-	for _, term := range queryTerms {
-		for _, doc := range docs {
-			if doc.Terms[term] > 0 {
-				df[term]++
-			}
-		}
-	}
-
+	df := documentFrequencies(docs, queryTerms)
 	docCount := len(docs)
 	avgLen := averageLength(docs)
 	keywordList := make([]rrfScoredDocument, 0, len(docs))
@@ -689,6 +657,18 @@ func cosineSimilarity(a []float64, b []float64) (float64, bool) {
 	return dot / math.Sqrt(denom), true
 }
 
+func documentFrequencies(docs []Document, terms []string) map[string]int {
+	df := make(map[string]int, len(terms))
+	for _, term := range terms {
+		for _, doc := range docs {
+			if doc.Terms[term] > 0 {
+				df[term]++
+			}
+		}
+	}
+	return df
+}
+
 func bm25(docCount int, doc Document, terms []string, df map[string]int, avgLen float64) float64 {
 	const k1 = 1.5
 	const b = 0.75
@@ -737,7 +717,7 @@ func termCount(terms map[string]int) int {
 
 func contentHash(content string) string {
 	sum := sha256.Sum256([]byte(content))
-	return fmt.Sprintf("%x", sum)
+	return hex.EncodeToString(sum[:])
 }
 
 func contentHashes(files []TextFile) map[string]string {

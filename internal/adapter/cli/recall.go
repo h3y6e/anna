@@ -89,11 +89,15 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			return nil
 		},
 	}
-	addInFlag(cmd)
+	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config)")
+	_ = cmd.MarkFlagDirname("in")
 	cmd.Flags().Int("limit", 10, "maximum results")
 	cmd.Flags().String("mode", string(core.SearchModeHybrid), "recall mode: bm25, vector, hybrid, or rrf")
 	_ = cfg.BindPFlag("recall.limit", cmd.Flags().Lookup("limit"))
 	_ = cfg.BindPFlag("recall.mode", cmd.Flags().Lookup("mode"))
-	_ = cmd.RegisterFlagCompletionFunc("mode", completeChoices("bm25", "vector", "hybrid", "rrf"))
+	_ = cmd.RegisterFlagCompletionFunc("mode", cobra.FixedCompletions(
+		[]string{"bm25", "vector", "hybrid", "rrf"},
+		cobra.ShellCompDirectiveNoFileComp,
+	))
 	return cmd
 }

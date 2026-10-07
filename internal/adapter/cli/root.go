@@ -360,14 +360,3 @@ func contains(dir string, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-
-func addInFlag(cmd *cobra.Command) {
-	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config)")
-	_ = cmd.MarkFlagDirname("in")
-}
-
-func completeChoices(choices ...string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-	return func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return choices, cobra.ShellCompDirectiveNoFileComp
-	}
-}
