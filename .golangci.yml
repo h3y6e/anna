@@ -11,10 +11,14 @@ linters:
     - funcorder
     - godot
     - gosec
+    - govet
+    - ineffassign
     - misspell
     - modernize
     - revive
     - staticcheck
+    - unparam
+    - unused
   settings:
     errcheck:
       check-type-assertions: true
@@ -34,16 +38,3 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
-    paths:
-      - tmpmod
-      - third_party$
-      - builtin$
-      - examples$
-
-formatters:
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$

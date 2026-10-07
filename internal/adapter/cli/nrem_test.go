@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -138,7 +137,7 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var called bool
-	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+	_, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(EmbedderSettings) (core.Embedder, error) {
@@ -148,15 +147,9 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 			called = true
 			return fakeTokenizer{}, nil
 		},
-	}))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"nrem", source})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr.String())
+	}), "nrem", source)
+	if err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
 	if !called {
 		t.Fatal("tokenizer factory was not called")
@@ -169,7 +162,7 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var capturedModel string
-	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+	_, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
@@ -179,15 +172,9 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil
 		},
-	}))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"nrem", source, "--embedder-model", "qwen3-embedding"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr.String())
+	}), "nrem", source, "--embedder-model", "qwen3-embedding")
+	if err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
 	if capturedModel != "qwen3-embedding" {
 		t.Fatalf("embedding model = %q, want qwen3-embedding", capturedModel)
@@ -216,7 +203,7 @@ amnesia = false
 
 	var capturedBaseURL string
 	var capturedModel string
-	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+	stdout, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
@@ -227,18 +214,12 @@ amnesia = false
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil
 		},
-	}))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"--config", configPath, "nrem", source})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr.String())
+	}), "--config", configPath, "nrem", source)
+	if err != nil {
+		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)
 	}
-	if !strings.Contains(stdout.String(), "consolidated 2 documents") {
-		t.Fatalf("nrem stdout = %q, want two consolidated documents", stdout.String())
+	if !strings.Contains(stdout, "consolidated 2 documents") {
+		t.Fatalf("nrem stdout = %q, want two consolidated documents", stdout)
 	}
 	if _, err := os.Stat(memoryPath); err != nil {
 		t.Fatalf("configured memory file was not created at %s: %v", memoryPath, err)
@@ -347,10 +328,14 @@ func TestMemoryMustBeAPlainFileName(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{"", ".", "..", "../elsewhere.db", "sub/anna.db", "/abs/memory.db"} {
-		_, _, err := executeCommand("nrem", tempDir(t), "--memory", name)
-		if err == nil || !strings.Contains(err.Error(), "file name inside each notes directory") {
-			t.Fatalf("nrem --memory %q error = %v, want a file-name error", name, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, err := executeCommand("nrem", tempDir(t), "--memory", name)
+			if err == nil || !strings.Contains(err.Error(), "file name inside each notes directory") {
+				t.Fatalf("nrem --memory %q error = %v, want a file-name error", name, err)
+			}
+		})
 	}
 }
 

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +23,7 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	})
 
 	var capturedModel string
-	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+	_, stderr, err := executeCommandWithDependencies(testDependencies(Dependencies{
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			capturedModel = s.Model
@@ -33,15 +32,9 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return fakeTokenizer{}, nil
 		},
-	}))
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"recall", "--in", notes, "query", "--embedder-model", "qwen3-embedding"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr.String())
+	}), "recall", "--in", notes, "query", "--embedder-model", "qwen3-embedding")
+	if err != nil {
+		t.Fatalf("recall command failed: %v\nstderr: %s", err, stderr)
 	}
 	if capturedModel != "qwen3-embedding" {
 		t.Fatalf("embedding model = %q, want qwen3-embedding", capturedModel)
