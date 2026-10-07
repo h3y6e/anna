@@ -56,7 +56,7 @@ jobs:
       - uses: jdx/packslip@2af36e792faa28130987c8af509e475c7458405d # v1.6.0
         with:
           tag: ${{ needs.tagpr.outputs.tag }}
-          artifacts: dist/*.tar.gz dist/*.zip
+          artifacts: dist/anna_*.tar.gz dist/anna_*.zip
           bin: anna
       - run: gh release edit "$TAG" --draft=false
         env:
