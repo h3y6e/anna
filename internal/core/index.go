@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -906,6 +907,40 @@ func snippet(content string, query string) string {
 
 func runeIndex(s string, byteIndex int) int {
 	return len([]rune(s[:byteIndex]))
+}
+
+func documentTitle(doc Document) string {
+	if title := extractFrontmatterTitle(doc.Content); title != "" {
+		return title
+	}
+	for line := range strings.SplitSeq(doc.Content, "\n") {
+		line = strings.TrimSpace(line)
+		if title, ok := strings.CutPrefix(line, "# "); ok {
+			return strings.TrimSpace(title)
+		}
+	}
+	return path.Base(strings.TrimSuffix(doc.Path, path.Ext(doc.Path)))
+}
+
+func extractFrontmatterTitle(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "---") {
+		return ""
+	}
+	rest := trimmed[len("---"):]
+	front, _, ok := strings.Cut(rest, "\n---")
+	if !ok {
+		return ""
+	}
+	for line := range strings.SplitSeq(front, "\n") {
+		line = strings.TrimSpace(line)
+		if title, ok := strings.CutPrefix(line, "title:"); ok {
+			title = strings.TrimSpace(title)
+			title = strings.Trim(title, "\"'")
+			return title
+		}
+	}
+	return ""
 }
 
 const maxIndexedTitleRunes = 200
