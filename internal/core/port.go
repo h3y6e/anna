@@ -25,8 +25,7 @@ type Embedder interface {
 }
 
 type Tokenizer interface {
-	TokenizeDocument(ctx context.Context, text string) ([]string, error)
-	TokenizeQuery(ctx context.Context, text string) ([]string, error)
+	Tokenize(text string) []string
 }
 
 type TextFile struct {

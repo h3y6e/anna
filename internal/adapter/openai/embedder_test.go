@@ -58,7 +58,7 @@ func TestEmbedDocumentsUsesOpenAIEmbeddingsEndpoint(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
+	embeddings, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("EmbedDocuments error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestEmbedDocumentsSendsBearerTokenWhenAPIKeyIsConfigured(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	if _, err := NewEmbedder(server.URL, "test-model", "secret-key", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
+	if _, err := newEmbedder(t, server.URL, "test-model", "secret-key", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
 		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if got := <-authorization; got != "Bearer secret-key" {
@@ -111,7 +111,7 @@ func TestEmbedDocumentsOmitsAuthorizationHeaderWhenAPIKeyIsEmpty(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	if _, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
+	if _, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"}); err != nil {
 		t.Fatalf("EmbedDocuments error = %v", err)
 	}
 	if got := <-authorization; got != "" {
@@ -135,7 +135,7 @@ func TestEmbedDocumentsOrdersEmbeddingsByResponseIndex(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
+	embeddings, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatalf("EmbedDocuments error = %v", err)
 	}
@@ -159,7 +159,7 @@ func TestEmbedQueryReturnsSingleEmbedding(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embedding, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedQuery(t.Context(), "hello")
+	embedding, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedQuery(t.Context(), "hello")
 	if err != nil {
 		t.Fatalf("EmbedQuery error = %v", err)
 	}
@@ -178,7 +178,7 @@ func TestEmbedDocumentsSurfacesServerErrorMessage(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "missing", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
+	_, err := newEmbedder(t, server.URL, "missing", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err == nil {
 		t.Fatal("EmbedDocuments error = nil, want model not found error")
 	}
@@ -197,7 +197,7 @@ func TestEmbedDocumentsWrapsErrEmbedTextTooLargeWhenServerReportsContextOverflow
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"long text"})
+	_, err := newEmbedder(t, server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"long text"})
 	if err == nil {
 		t.Fatal("EmbedDocuments error = nil, want context overflow error")
 	}
@@ -216,7 +216,7 @@ func TestEmbedDocumentsWrapsErrEmbedTextTooLargeWhenBatchExceedsPhysicalBatchSiz
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"a", "b"})
+	_, err := newEmbedder(t, server.URL, "model", "", "", "").EmbedDocuments(t.Context(), []string{"a", "b"})
 	if err == nil {
 		t.Fatal("EmbedDocuments error = nil, want physical batch size error")
 	}
@@ -245,7 +245,7 @@ func TestEmbedDocumentsRetriesOnceWhenServerReturnsTransientEOF(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	embeddings, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
+	embeddings, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
 	if err != nil {
 		t.Fatalf("EmbedDocuments error = %v", err)
 	}
@@ -272,28 +272,37 @@ func TestEmbedDocumentsRejectsEmbeddingCountMismatch(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := NewEmbedder(server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
+	_, err := newEmbedder(t, server.URL, "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello", "world"})
 	if err == nil {
 		t.Fatal("EmbedDocuments error = nil, want embedding count mismatch error")
 	}
 }
 
-func TestEmbedDocumentsRequiresModel(t *testing.T) {
+func TestNewRequiresModel(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewEmbedder("http://embedder.example", "", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
+	_, err := New("http://embedder.example", "", "", "", "")
 	if err == nil || !strings.Contains(err.Error(), "model is required") {
-		t.Fatalf("EmbedDocuments error = %v, want model is required", err)
+		t.Fatalf("New error = %v, want model is required", err)
 	}
 }
 
-func TestEmbedDocumentsRequiresBaseURL(t *testing.T) {
+func TestNewRequiresBaseURL(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewEmbedder("", "test-model", "", "", "").EmbedDocuments(t.Context(), []string{"hello"})
+	_, err := New("", "test-model", "", "", "")
 	if err == nil || !strings.Contains(err.Error(), "base URL is required") {
-		t.Fatalf("EmbedDocuments error = %v, want base URL is required", err)
+		t.Fatalf("New error = %v, want base URL is required", err)
 	}
+}
+
+func newEmbedder(t *testing.T, baseURL string, model string, apiKey string, queryPrefix string, documentPrefix string) Embedder {
+	t.Helper()
+	embedder, err := New(baseURL, model, apiKey, queryPrefix, documentPrefix)
+	if err != nil {
+		t.Fatalf("New error = %v", err)
+	}
+	return embedder
 }
 
 func TestEmbedQueryAndEmbedDocumentsPrependTheirConfiguredPrefixes(t *testing.T) {
@@ -318,7 +327,7 @@ func TestEmbedQueryAndEmbedDocumentsPrependTheirConfiguredPrefixes(t *testing.T)
 		}
 	}))
 	t.Cleanup(server.Close)
-	embedder := NewEmbedder(server.URL, "test-model", "", "query: ", "passage: ")
+	embedder := newEmbedder(t, server.URL, "test-model", "", "query: ", "passage: ")
 
 	// Act
 	if _, err := embedder.EmbedQuery(t.Context(), "猫"); err != nil {

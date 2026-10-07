@@ -36,10 +36,6 @@ type Indexer struct {
 	progress    func(IndexProgress)
 }
 
-type IndexBuildOptions struct {
-	Rebuild bool
-}
-
 func NewIndexer(source TextSource, store IndexStore, embedder Embedder, tokenizer Tokenizer) *Indexer {
 	return &Indexer{source: source, store: store, embedder: embedder, tokenizer: tokenizer}
 }
@@ -66,7 +62,21 @@ func (i *Indexer) WithProgress(fn func(IndexProgress)) *Indexer {
 	return i
 }
 
-func (i *Indexer) Build(ctx context.Context, source string) (*Index, error) {
+func (i *Indexer) BuildAndSave(ctx context.Context, source string, indexPath string, rebuild bool) (*Index, error) {
+	if !rebuild {
+		return i.buildIncremental(ctx, source, indexPath)
+	}
+	index, err := i.build(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	if err := i.store.Save(ctx, indexPath, index); err != nil {
+		return nil, err
+	}
+	return index, nil
+}
+
+func (i *Indexer) build(ctx context.Context, source string) (*Index, error) {
 	files, err := i.readTextFiles(ctx, source)
 	if err != nil {
 		return nil, err
@@ -78,34 +88,7 @@ func (i *Indexer) Build(ctx context.Context, source string) (*Index, error) {
 	return i.newIndex(docs), nil
 }
 
-func (i *Indexer) BuildAndSave(ctx context.Context, source string, indexPath string) (*Index, error) {
-	return i.BuildAndSaveWithOptions(ctx, source, indexPath, IndexBuildOptions{})
-}
-
-func (i *Indexer) BuildAndSaveWithOptions(
-	ctx context.Context,
-	source string,
-	indexPath string,
-	options IndexBuildOptions,
-) (*Index, error) {
-	if !options.Rebuild {
-		index, err := i.BuildIncremental(ctx, source, indexPath)
-		if err != nil {
-			return nil, err
-		}
-		return index, nil
-	}
-	index, err := i.Build(ctx, source)
-	if err != nil {
-		return nil, err
-	}
-	if err := i.store.Save(ctx, indexPath, index); err != nil {
-		return nil, err
-	}
-	return index, nil
-}
-
-func (i *Indexer) BuildIncremental(ctx context.Context, source string, indexPath string) (*Index, error) {
+func (i *Indexer) buildIncremental(ctx context.Context, source string, indexPath string) (*Index, error) {
 	files, err := i.readTextFiles(ctx, source)
 	if err != nil {
 		return nil, err
@@ -244,11 +227,7 @@ func (i *Indexer) embedChunk(ctx context.Context, files []TextFile, docs []Docum
 	pending := make([]*Document, 0, len(chunk))
 	for _, w := range chunk {
 		indexTitle := shortDocumentTitle(Document{Path: w.file.Path, Content: w.file.Content})
-		tokens, err := i.tokenizer.TokenizeDocument(ctx, indexTitle+" "+indexTitle+" "+indexTitle+" "+w.file.Content)
-		if err != nil {
-			return fmt.Errorf("tokenize %s: %w", w.file.Path, err)
-		}
-		terms := countTerms(tokens)
+		terms := countTerms(i.tokenizer.Tokenize(indexTitle + " " + indexTitle + " " + indexTitle + " " + w.file.Content))
 		doc := &docs[w.index]
 		doc.Path = w.file.Path
 		doc.Content = w.file.Content
@@ -441,11 +420,7 @@ func (s *Searcher) SearchFiles(
 	if err := mode.Validate(); err != nil {
 		return nil, err
 	}
-	queryTerms, err := s.tokenizer.TokenizeQuery(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("tokenize query: %w", err)
-	}
-	queryTerms = unique(queryTerms)
+	queryTerms := unique(s.tokenizer.Tokenize(query))
 
 	var docs []Document
 	for _, indexPath := range indexPaths {
@@ -467,6 +442,7 @@ func (s *Searcher) SearchFiles(
 
 	var queryEmbedding []float64
 	if mode.RequiresEmbedding() {
+		var err error
 		queryEmbedding, err = s.embedder.EmbedQuery(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)

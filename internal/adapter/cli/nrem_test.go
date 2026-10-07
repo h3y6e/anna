@@ -138,10 +138,8 @@ func TestNREMUsesTokenizerFactory(t *testing.T) {
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var called bool
-	cmd := NewRootCommand(testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
+	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(EmbedderSettings) (core.Embedder, error) {
 			return fixedEmbedder{}, nil
@@ -171,10 +169,8 @@ func TestNREMUsesConfiguredEmbeddingModel(t *testing.T) {
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "# Note\n\nEnglish and 日本語 notes.\n")
 	var capturedModel string
-	cmd := NewRootCommand(testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
+	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			capturedModel = s.Model
@@ -220,10 +216,8 @@ amnesia = false
 
 	var capturedBaseURL string
 	var capturedModel string
-	cmd := NewRootCommand(testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
+	cmd := NewRootCommand("dev", testDependencies(Dependencies{
+		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			capturedBaseURL = s.BaseURL

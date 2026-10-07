@@ -405,12 +405,8 @@ type fixedTokenizer struct {
 	tokens []string
 }
 
-func (t fixedTokenizer) TokenizeDocument(context.Context, string) ([]string, error) {
-	return t.tokens, nil
-}
-
-func (t fixedTokenizer) TokenizeQuery(context.Context, string) ([]string, error) {
-	return t.tokens, nil
+func (t fixedTokenizer) Tokenize(string) []string {
+	return t.tokens
 }
 
 func TestIndexStoreSaveRecordsEmbeddingPrefixesForLoadAndLoadManifest(t *testing.T) {

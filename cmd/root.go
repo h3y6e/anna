@@ -14,17 +14,14 @@ import (
 )
 
 func Execute(version string) error {
-	cli.Version = version
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cmd := cli.NewRootCommand(cli.Dependencies{
-		NewTextSource: func() core.TextSource {
-			return fs.TextSource{}
-		},
+	cmd := cli.NewRootCommand(version, cli.Dependencies{
+		TextSource: fs.TextSource{},
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(settings cli.EmbedderSettings) (core.Embedder, error) {
-			return openai.NewEmbedder(settings.BaseURL, settings.Model, settings.APIKey, settings.QueryPrefix, settings.DocumentPrefix), nil
+			return openai.New(settings.BaseURL, settings.Model, settings.APIKey, settings.QueryPrefix, settings.DocumentPrefix)
 		},
 		NewTokenizer: func() (core.Tokenizer, error) {
 			return tokenizer.New()

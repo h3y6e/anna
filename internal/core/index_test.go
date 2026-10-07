@@ -44,7 +44,7 @@ func TestIndexerBuildAndSaveReusesUnchangedDocuments(t *testing.T) {
 		{Path: "keep.md", Content: unchangedContent},
 		{Path: "new.md", Content: "# New\n\nnew body"},
 	}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
-		BuildAndSave(t.Context(), "notes", "memory.db")
+		BuildAndSave(t.Context(), "notes", "memory.db", false)
 	if err != nil {
 		t.Fatalf("BuildAndSave error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestIndexerBuildAndSaveSkipsSaveWhenNothingChanged(t *testing.T) {
 	}
 	embedder := &countingEmbedder{embedding: []float64{1, 0}}
 	index, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
-		BuildAndSave(t.Context(), "notes", "memory.db")
+		BuildAndSave(t.Context(), "notes", "memory.db", false)
 	if err != nil {
 		t.Fatalf("BuildAndSave error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestIndexerBuildEmbedsDocumentsInBatches(t *testing.T) {
 		{Path: "b.md", Content: "# B\n"},
 		{Path: "c.md", Content: "# C\n"},
 	}}, nil, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
-		Build(t.Context(), "notes")
+		build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -158,9 +158,9 @@ func TestIndexerBuildAndSaveRebuildOptionIgnoresReusableIndex(t *testing.T) {
 	}}
 	embedder := &countingEmbedder{embedding: []float64{1, 0}}
 	_, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).WithEmbedding(EmbeddingProfile{Model: "model"}).
-		BuildAndSaveWithOptions(t.Context(), "notes", "memory.db", IndexBuildOptions{Rebuild: true})
+		BuildAndSave(t.Context(), "notes", "memory.db", true)
 	if err != nil {
-		t.Fatalf("BuildAndSaveWithOptions error = %v", err)
+		t.Fatalf("BuildAndSave error = %v", err)
 	}
 	if embedder.calls != 1 {
 		t.Fatalf("Embed calls = %d, want full rebuild to embed document", embedder.calls)
@@ -207,7 +207,7 @@ func TestIndexerSkipsOnlyTheMemoryFileAtTheSourceRoot(t *testing.T) {
 		{Path: "memory.md", Content: "binary"},
 		{Path: "sub/memory.md", Content: "binary"},
 	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).WithIgnoredPath("memory.md").
-		Build(t.Context(), "notes")
+		build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -354,7 +354,7 @@ func TestIndexerSplitsOversizedDocumentAndAveragesEmbeddings(t *testing.T) {
 	content := strings.Repeat("ab ", 20) // 60 runes, exceeds maxRunes but splits into two halves that fit
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "long.md", Content: content},
-	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, embedder, fixedTokenizer{}).build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -381,7 +381,7 @@ func TestIndexerSplitsOversizedDocumentWithoutWhitespaceAtMidpoint(t *testing.T)
 
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "long.md", Content: content},
-	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, embedder, fixedTokenizer{}).build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -401,7 +401,7 @@ func TestIndexerSurfacesErrorWhenDocumentTooSmallToSplitFurther(t *testing.T) {
 
 	_, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "tiny.md", Content: content},
-	}}, nil, embedder, fixedTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, embedder, fixedTokenizer{}).build(t.Context(), "notes")
 	if err == nil || !errors.Is(err, ErrEmbedTextTooLarge) {
 		t.Fatalf("Build error = %v, want error wrapping ErrEmbedTextTooLarge", err)
 	}
@@ -413,7 +413,7 @@ func TestIndexerPropagatesNonContextErrorsWithoutSplitting(t *testing.T) {
 	wantErr := errors.New("boom")
 	_, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "a.md", Content: "short content"},
-	}}, nil, failingEmbedder{err: wantErr}, fixedTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, failingEmbedder{err: wantErr}, fixedTokenizer{}).build(t.Context(), "notes")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("Build error = %v, want wrapped %v", err, wantErr)
 	}
@@ -425,7 +425,7 @@ func TestSearchCJKExactQueryDoesNotExpandToBigram(t *testing.T) {
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "tokyo.md", Content: "# 東京都\n行政区域"},
 		{Path: "kyoto.md", Content: "# 京都\n旅行"},
-	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, cjkTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, cjkTokenizer{}).build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -448,7 +448,7 @@ func TestSearchCJKSpacedTermsMatchCompoundDocument(t *testing.T) {
 
 	index, err := NewIndexer(stubTextSource{files: []TextFile{
 		{Path: "poll.md", Content: "# 投票作成UI\n選択肢編集"},
-	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, cjkTokenizer{}).Build(t.Context(), "notes")
+	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, cjkTokenizer{}).build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -475,7 +475,7 @@ func TestIndexerBuildReportsProgress(t *testing.T) {
 		{Path: "b.md", Content: "# B\nbody b"},
 	}}, nil, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
 		WithProgress(func(p IndexProgress) { progress = append(progress, p) }).
-		Build(t.Context(), "notes")
+		build(t.Context(), "notes")
 	if err != nil {
 		t.Fatalf("Build error = %v", err)
 	}
@@ -524,7 +524,7 @@ func TestIndexerIncrementalBuildReportsProgressWithCachedDocuments(t *testing.T)
 	}}, store, fixedEmbedder{embedding: []float64{1, 0}}, fixedTokenizer{}).
 		WithEmbedding(EmbeddingProfile{Model: "model"}).
 		WithProgress(func(p IndexProgress) { progress = append(progress, p) }).
-		BuildAndSave(t.Context(), "notes", "memory.db")
+		BuildAndSave(t.Context(), "notes", "memory.db", false)
 	if err != nil {
 		t.Fatalf("BuildAndSave error = %v", err)
 	}
@@ -690,17 +690,19 @@ func (e failingEmbedder) EmbedDocuments(_ context.Context, texts []string) ([][]
 
 type fixedTokenizer struct{}
 
-func (fixedTokenizer) TokenizeDocument(_ context.Context, text string) ([]string, error) {
-	return strings.Fields(strings.ToLower(text)), nil
-}
-
-func (fixedTokenizer) TokenizeQuery(_ context.Context, text string) ([]string, error) {
-	return strings.Fields(strings.ToLower(text)), nil
+func (fixedTokenizer) Tokenize(text string) []string {
+	return strings.Fields(strings.ToLower(text))
 }
 
 type cjkTokenizer struct{}
 
-func (cjkTokenizer) TokenizeDocument(_ context.Context, text string) ([]string, error) {
+func (cjkTokenizer) Tokenize(text string) []string {
+	switch text {
+	case "東京都":
+		return []string{"東京都", "東京", "都"}
+	case "投票 作成":
+		return []string{"投票", "作成"}
+	}
 	tokens := []string{}
 	if strings.Contains(text, "東京都") {
 		tokens = append(tokens, "東京都", "東京", "都")
@@ -714,18 +716,7 @@ func (cjkTokenizer) TokenizeDocument(_ context.Context, text string) ([]string, 
 	if strings.Contains(text, "選択肢編集") {
 		tokens = append(tokens, "選択肢編集", "選択肢", "編集")
 	}
-	return tokens, nil
-}
-
-func (cjkTokenizer) TokenizeQuery(_ context.Context, text string) ([]string, error) {
-	switch text {
-	case "東京都":
-		return []string{"東京都", "東京", "都"}, nil
-	case "投票 作成":
-		return []string{"投票", "作成"}, nil
-	default:
-		return strings.Fields(strings.ToLower(text)), nil
-	}
+	return tokens
 }
 
 func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T) {
@@ -758,7 +749,7 @@ func TestIndexerBuildAndSaveReembedsEveryDocumentWhenAPrefixChanged(t *testing.T
 	// Act
 	index, err := NewIndexer(stubTextSource{files: []TextFile{{Path: "keep.md", Content: content}}}, store, embedder, fixedTokenizer{}).
 		WithEmbedding(current).
-		BuildAndSave(t.Context(), "notes", "memory.db")
+		BuildAndSave(t.Context(), "notes", "memory.db", false)
 
 	// Assert
 	if err != nil {

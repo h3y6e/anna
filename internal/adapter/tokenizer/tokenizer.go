@@ -1,25 +1,19 @@
 package tokenizer
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"unicode"
 
-	"github.com/h3y6e/anna/internal/core"
 	"github.com/ikawaha/kagome-dict/uni"
 	kagome "github.com/ikawaha/kagome/v2/tokenizer"
 )
-
-func New() (core.Tokenizer, error) {
-	return NewKagome()
-}
 
 type Kagome struct {
 	tokenizer *kagome.Tokenizer
 }
 
-func NewKagome() (*Kagome, error) {
+func New() (*Kagome, error) {
 	t, err := kagome.New(uni.Dict(), kagome.OmitBosEos())
 	if err != nil {
 		return nil, fmt.Errorf("create kagome tokenizer: %w", err)
@@ -27,15 +21,7 @@ func NewKagome() (*Kagome, error) {
 	return &Kagome{tokenizer: t}, nil
 }
 
-func (t *Kagome) TokenizeDocument(_ context.Context, text string) ([]string, error) {
-	return t.tokenize(text), nil
-}
-
-func (t *Kagome) TokenizeQuery(_ context.Context, text string) ([]string, error) {
-	return unique(t.tokenize(text)), nil
-}
-
-func (t *Kagome) tokenize(text string) []string {
+func (t *Kagome) Tokenize(text string) []string {
 	tokens := make([]string, 0)
 	for _, token := range t.tokenizer.Analyze(text, kagome.Search) {
 		if !keepKagomeToken(token) {
@@ -66,19 +52,6 @@ func appendNormalized(tokens []string, token string) []string {
 		return tokens
 	}
 	return append(tokens, token)
-}
-
-func unique(tokens []string) []string {
-	seen := make(map[string]bool, len(tokens))
-	out := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if seen[token] {
-			continue
-		}
-		seen[token] = true
-		out = append(out, token)
-	}
-	return out
 }
 
 func hasLetterOrDigit(s string) bool {

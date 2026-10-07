@@ -24,7 +24,7 @@ func TestRecallUsesConfiguredEmbeddingModel(t *testing.T) {
 	})
 
 	var capturedModel string
-	cmd := NewRootCommand(testDependencies(Dependencies{
+	cmd := NewRootCommand("dev", testDependencies(Dependencies{
 		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			capturedModel = s.Model

@@ -14,8 +14,8 @@ func nremWithEmbedderSpy(t *testing.T, extraArgs ...string) (settings EmbedderSe
 	source := tempDir(t)
 	writeFile(t, filepath.Join(source, "note.md"), "note content\n")
 	deps := testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource { return fs.TextSource{} },
-		IndexStore:    fs.IndexStore{},
+		TextSource: fs.TextSource{},
+		IndexStore: fs.IndexStore{},
 		NewEmbedder: func(s EmbedderSettings) (core.Embedder, error) {
 			settings = s
 			return fakeEmbedder{}, nil
@@ -182,10 +182,10 @@ func TestRecallFailsWhenPrefixesDifferFromThoseTheMemoryWasBuiltWith(t *testing.
 	notes := tempDir(t)
 	writeFile(t, filepath.Join(notes, "note.md"), "note content\n")
 	deps := testDependencies(Dependencies{
-		NewTextSource: func() core.TextSource { return fs.TextSource{} },
-		IndexStore:    fs.IndexStore{},
-		NewEmbedder:   func(EmbedderSettings) (core.Embedder, error) { return fakeEmbedder{}, nil },
-		NewTokenizer:  func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
+		TextSource:   fs.TextSource{},
+		IndexStore:   fs.IndexStore{},
+		NewEmbedder:  func(EmbedderSettings) (core.Embedder, error) { return fakeEmbedder{}, nil },
+		NewTokenizer: func() (core.Tokenizer, error) { return fakeTokenizer{}, nil },
 	})
 	if _, stderr, err := executeCommandWithDependencies(deps, "nrem", notes, "--embedder-query-prefix", "query: "); err != nil {
 		t.Fatalf("nrem command failed: %v\nstderr: %s", err, stderr)

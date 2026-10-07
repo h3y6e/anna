@@ -14,7 +14,7 @@ import (
 )
 
 type Dependencies struct {
-	NewTextSource     func() core.TextSource
+	TextSource        core.TextSource
 	IndexStore        core.IndexStore
 	NewEmbedder       func(settings EmbedderSettings) (core.Embedder, error)
 	NewTokenizer      func() (core.Tokenizer, error)
@@ -44,7 +44,7 @@ func (s EmbedderSettings) profile() core.EmbeddingProfile {
 	return core.EmbeddingProfile{Model: s.Model, QueryPrefix: s.QueryPrefix, DocumentPrefix: s.DocumentPrefix}
 }
 
-func NewRootCommand(deps Dependencies) *cobra.Command {
+func NewRootCommand(version string, deps Dependencies) *cobra.Command {
 	cfg := viper.New()
 	cfg.SetEnvPrefix("anna")
 	cfg.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
@@ -58,7 +58,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 The commands are named after sleep phases:
   nrem   builds an embedding and term index from notes
   recall searches the memory using bm25, vector, hybrid, or rrf`,
-		Version: Version,
+		Version: version,
 		Example: `  # Build a memory from a notes directory
   anna nrem ~/notes
 
@@ -98,7 +98,6 @@ The commands are named after sleep phases:
 
 	root.AddCommand(newNREMCommand(cfg, deps))
 	root.AddCommand(newRecallCommand(cfg, deps))
-	root.AddCommand(newVersionCommand())
 	return root
 }
 
