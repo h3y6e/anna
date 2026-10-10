@@ -5,10 +5,12 @@ go 1.26.4
 require (
 	github.com/ikawaha/kagome-dict/uni v1.2.6
 	github.com/ikawaha/kagome/v2 v2.11.0
+	github.com/jdx/usage/integrations/cobra v0.0.0-20261010145451-962a1111e2f9
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/sync v0.21.0
+	golang.org/x/term v0.47.0
 )
 
 require (
@@ -24,6 +26,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )

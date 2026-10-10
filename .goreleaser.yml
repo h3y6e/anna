@@ -8,7 +8,12 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
 archives:
-  - format_overrides:
+  - files:
+      - README.md
+      - LICENSE
+      - schema/config.schema.json
+      - skills/**/*
+    format_overrides:
       - goos: windows
         formats:
           - zip

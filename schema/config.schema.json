@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/h3y6e/anna/blob/main/schema/config.schema.json",
+  "title": "anna config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "memory": { "type": "string" },
+    "quiet": { "type": "boolean" },
+    "json": { "type": "boolean" },
+    "debug": { "type": "boolean" },
+    "embedder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string" },
+        "model": { "type": "string" },
+        "api-key": { "type": "string" },
+        "query-prefix": { "type": "string" },
+        "document-prefix": { "type": "string" }
+      }
+    },
+    "nrem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amnesia": { "type": "boolean" },
+        "dry-run": { "type": "boolean" },
+        "yes": { "type": "boolean" }
+      }
+    },
+    "recall": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["bm25", "vector", "hybrid", "rrf"] },
+        "limit": { "type": "integer", "minimum": 1 },
+        "in": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

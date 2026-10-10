@@ -70,13 +70,12 @@ You can provide a TOML config file with `--config`:
 anna --config ./anna.toml nrem ~/notes
 ```
 
-Without `--config`, `anna` searches for config files in this order:
+Without `--config`, `anna` reads config files in this order. Later files override earlier ones:
 
-1. `./anna.toml`
-2. `$XDG_CONFIG_HOME/anna/config.toml`
-3. `~/.config/anna/config.toml`
+1. The first `config.toml` under `$XDG_CONFIG_HOME/anna` or `~/.config/anna`, then the first `anna.toml` in those directories. A relative `XDG_CONFIG_HOME` is ignored.
+2. From parent directories down to the working directory: `anna.toml`, then `anna.local.toml`.
 
-Local configuration values override global configuration values.
+`ANNA_CONFIG` selects one file instead, and a `--config` flag overrides it. `embedder.api-key` is read only from the global config or `ANNA_EMBEDDER_API_KEY`. `anna settings` prints each value and whether it came from the default, a file, the environment, or a flag. The config schema is [schema/config.schema.json](schema/config.schema.json).
 
 `notes` lists the directories that `nrem` builds when no directory is given and that `recall` reads when `--in` is not given. Relative entries resolve against the directory of the config file that sets them. `memory` is the file name of the memory inside each notes directory; it cannot point to another directory.
 
@@ -131,10 +130,10 @@ When `recall` reads several directories, term statistics are computed over all o
 
 `nrem` reuses embeddings and term statistics for documents whose path and content hash have not changed.
 
-To rebuild the entire index, use `--amnesia`:
+To rebuild the entire index, use `--amnesia`. When a memory already exists, `nrem` prints the file it will overwrite and asks on a terminal. Pass `--yes` to skip the question. `--dry-run` prints the result and writes nothing:
 
 ```sh
-anna nrem ~/notes --amnesia
+anna nrem ~/notes --amnesia --yes
 ```
 
 ### Periodic runs
