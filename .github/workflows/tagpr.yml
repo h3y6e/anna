@@ -58,6 +58,10 @@ jobs:
           tag: ${{ needs.tagpr.outputs.tag }}
           artifacts: dist/anna_*.tar.gz dist/anna_*.zip
           bin: anna
+          resources: |
+            cli-spec/usage=exec:go run . --usage-spec
+            skill/anna-nrem=archive:skills/anna-nrem
+            skill/anna-recall=archive:skills/anna-recall
       - run: gh release edit "$TAG" --draft=false
         env:
           GH_TOKEN: ${{ github.token }}

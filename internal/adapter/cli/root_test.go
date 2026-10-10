@@ -52,13 +52,18 @@ func executeCommand(args ...string) (string, string, error) {
 }
 
 func executeCommandWithDependencies(deps Dependencies, args ...string) (string, string, error) {
+	if deps.ConfigStopDir == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			deps.ConfigStopDir = cwd
+		}
+	}
 	cmd := NewRootCommand("dev", deps)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := Execute(cmd)
 	return stdout.String(), stderr.String(), err
 }
 

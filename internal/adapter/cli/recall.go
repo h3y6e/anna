@@ -10,12 +10,25 @@ import (
 	"github.com/spf13/viper"
 )
 
+type recallHit struct {
+	Record  string  `json:"record"`
+	Schema  int     `json:"schema"`
+	Path    string  `json:"path"`
+	Score   float64 `json:"score"`
+	Snippet string  `json:"snippet"`
+}
+
 func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "recall [query]",
+		Use:   "recall <query>...",
 		Short: "Search the memory database",
-		Long:  "Search the memory database for the given query and return the most relevant notes.",
-		Args:  cobra.ArbitraryArgs,
+		Long:  "Search the memory database for the given query and return the most relevant notes. This command reads the memory.",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return usageFailure(cmd, "query is required", nil)
+			}
+			return nil
+		},
 		Example: `  # Search with the default hybrid mode
   anna recall --in ~/notes "search query"
 
@@ -40,12 +53,12 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			}
 
 			if limit < 1 {
-				return fmt.Errorf("limit must be at least 1, got %d", limit)
+				return usageFailure(cmd, fmt.Sprintf("limit must be at least 1, got %d", limit), nil)
 			}
 
 			searchMode, err := core.ParseSearchMode(mode)
 			if err != nil {
-				return err
+				return usageFailure(cmd, err.Error(), err)
 			}
 			if err := requireMemories(scopes); err != nil {
 				return err
@@ -71,16 +84,22 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			}
 			results, err := searcher.SearchFiles(cmd.Context(), memories, searchQuery, limit, searchMode)
 			if err != nil {
-				return fmt.Errorf("search memory: %w", err)
+				return &failure{Exit: 1, Code: "index", Cause: fmt.Sprintf("search memory: %s", err.Error()), err: err}
 			}
 			if jsonOutput {
 				encoder := json.NewEncoder(cmd.OutOrStdout())
 				for _, result := range results {
-					if err := encoder.Encode(result); err != nil {
+					if err := encoder.Encode(recallHit{
+						Record:  "hit",
+						Schema:  outputSchema,
+						Path:    result.Path,
+						Score:   result.Score,
+						Snippet: result.Snippet,
+					}); err != nil {
 						return fmt.Errorf("write result: %w", err)
 					}
 				}
-				return nil
+				return writeSuccess(cmd.OutOrStdout())
 			}
 
 			for _, result := range results {
@@ -89,12 +108,13 @@ func newRecallCommand(cfg *viper.Viper, deps Dependencies) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config)")
+	cmd.Flags().StringArray("in", nil, "notes directory to read; repeat for several (default: notes from the config, or ANNA_RECALL_IN)")
 	_ = cmd.MarkFlagDirname("in")
 	cmd.Flags().Int("limit", 10, "maximum results")
 	cmd.Flags().String("mode", string(core.SearchModeHybrid), "recall mode: bm25, vector, hybrid, or rrf")
 	_ = cfg.BindPFlag("recall.limit", cmd.Flags().Lookup("limit"))
 	_ = cfg.BindPFlag("recall.mode", cmd.Flags().Lookup("mode"))
+	_ = cfg.BindPFlag("recall.in", cmd.Flags().Lookup("in"))
 	_ = cmd.RegisterFlagCompletionFunc("mode", cobra.FixedCompletions(
 		[]string{"bm25", "vector", "hybrid", "rrf"},
 		cobra.ShellCompDirectiveNoFileComp,
